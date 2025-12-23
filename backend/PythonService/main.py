@@ -11,12 +11,21 @@ import os
 from dotenv import load_dotenv
 import json
 import math
+import requests
+from datetime import datetime, timedelta
 try:
     from youtube_helper import search_youtube_video, get_youtube_watch_url, get_youtube_embed_url
     YOUTUBE_HELPER_AVAILABLE = True
 except ImportError:
     YOUTUBE_HELPER_AVAILABLE = False
     print("⚠️  YouTube helper not available. Video search will use fallback.")
+
+try:
+    from groq_helper import GroqClient
+    GROQ_HELPER_AVAILABLE = True
+except ImportError:
+    GROQ_HELPER_AVAILABLE = False
+    print("⚠️  Groq helper not available.")
 
 try:
     from agent_features import AgentFeatures
@@ -31,6 +40,13 @@ try:
 except ImportError:
     GOOGLE_CLOUD_AGENT_AVAILABLE = False
     print("⚠️  Google Cloud Agent not available.")
+
+try:
+    from document_intelligence_service import DocumentIntelligence, create_document_intelligence_service
+    DOCUMENT_INTELLIGENCE_AVAILABLE = True
+except ImportError:
+    DOCUMENT_INTELLIGENCE_AVAILABLE = False
+    print("⚠️  Document Intelligence not available.")
 
 # ============================================================================
 # VECTOR DATABASE CLASS
@@ -155,10 +171,32 @@ class SimpleVectorDB:
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
-    raise ValueError("⚠️  GEMINI_API_KEY không được tìm thấy trong file .env\nLấy API key tại: https://aistudio.google.com/apikey")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+DEFAULT_AI_MODEL = os.getenv("DEFAULT_AI_MODEL", "gemini")
 
-genai.configure(api_key=GEMINI_API_KEY)
+# Validate API keys
+if DEFAULT_AI_MODEL == "gemini":
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+        raise ValueError("⚠️  GEMINI_API_KEY không được tìm thấy trong file .env\nLấy API key tại: https://aistudio.google.com/apikey")
+    genai.configure(api_key=GEMINI_API_KEY)
+    print(f"✅ Using Gemini AI")
+elif DEFAULT_AI_MODEL == "groq":
+    if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+        raise ValueError("⚠️  GROQ_API_KEY không được tìm thấy trong file .env\nLấy API key tại: https://console.groq.com/")
+    print(f"✅ Using Groq AI")
+else:
+    # Fallback to Gemini if not specified
+    if GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
+        genai.configure(api_key=GEMINI_API_KEY)
+        print(f"⚠️  Invalid DEFAULT_AI_MODEL, falling back to Gemini")
+    else:
+        raise ValueError(f"⚠️  No valid API key found")
+
+# Initialize AI clients
+groq_client = None
+if GROQ_HELPER_AVAILABLE and GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
+    groq_client = GroqClient(GROQ_API_KEY)
+    print("✅ Groq client initialized")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -189,11 +227,49 @@ else:
 
 # Initialize Google Cloud Agent
 if GOOGLE_CLOUD_AGENT_AVAILABLE:
-    google_cloud_agent = GoogleCloudAgent(google_cloud_url="http://localhost:8002")
+    google_cloud_agent = GoogleCloudAgent(google_cloud_url="http://localhost:8004")
     print("✅ Google Cloud Agent initialized")
 else:
     google_cloud_agent = None
     print("⚠️  Google Cloud Agent not initialized")
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+def get_user_id_from_token(token: str) -> Optional[int]:
+    """
+    Get user_id from JWT token by calling Spring Boot API
+    
+    Args:
+        token: JWT token string
+    
+    Returns:
+        user_id (int) or None if failed
+    """
+    if not token:
+        return None
+    
+    try:
+        # Call Spring Boot API to get user profile
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(
+            "http://localhost:8080/api/auth/profile",
+            headers=headers,
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            user_data = response.json()
+            user_id = user_data.get('id')
+            print(f"✅ Got user_id from token: {user_id}")
+            return user_id
+        else:
+            print(f"⚠️  Failed to get user from token: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"❌ Error getting user_id from token: {e}")
+        return None
 
 # ============================================================================
 # PYDANTIC MODELS
@@ -202,6 +278,7 @@ else:
 class ChatRequest(BaseModel):
     message: str
     model: str = "gemini-flash-latest"  # Use latest flash model (1,500 requests/day)
+    ai_provider: str = "gemini"  # "gemini" or "groq"
     use_rag: bool = True
     
     model_config = ConfigDict(
@@ -209,6 +286,7 @@ class ChatRequest(BaseModel):
             "example": {
                 "message": "Giải thích về AI là gì?",
                 "model": "gemini-2.5-flash",
+                "ai_provider": "gemini",
                 "use_rag": True
             }
         }
@@ -228,6 +306,31 @@ class ToolAction(BaseModel):
     video_id: Optional[str] = None  # YouTube video ID
     embed_url: Optional[str] = None  # URL để embed video
 
+class SendEmailRequest(BaseModel):
+    """Request model for sending email after user confirmation"""
+    to: str
+    subject: str
+    body: str
+    user_id: Optional[int] = None
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "to": "teacher@tvu.edu.vn",
+                "subject": "Xin nghỉ học",
+                "body": "Kính gửi thầy, em xin phép nghỉ học...",
+                "user_id": 1
+            }
+        }
+    )
+
+class EmailDraft(BaseModel):
+    """Email draft for preview"""
+    to: str
+    subject: str
+    body: str
+    user_id: Optional[int] = None
+
 class ChatResponse(BaseModel):
     response: str
     model: str
@@ -235,6 +338,7 @@ class ChatResponse(BaseModel):
     rag_enabled: bool = False
     suggested_actions: Optional[List[ActionLink]] = None  # Links gợi ý
     tool_action: Optional[ToolAction] = None  # Action tự động thực thi
+    email_draft: Optional[EmailDraft] = None  # Email draft for preview
 
 class DocumentRequest(BaseModel):
     documents: List[str]
@@ -384,6 +488,156 @@ def detect_tool_intent(message: str) -> Optional[ToolAction]:
     
     return None
 
+
+# ============================================================================
+# TEST ENDPOINT - TVU Schedule Direct
+# ============================================================================
+class TVUTestRequest(BaseModel):
+    mssv: str
+    password: str
+    message: str = "Hôm nay tôi học gì?"
+
+@app.post("/api/test/tvu-schedule", tags=["Test"])
+async def test_tvu_schedule(request: TVUTestRequest):
+    """
+    Test endpoint - Lấy TKB trực tiếp từ TVU (không cần đăng nhập hệ thống)
+    """
+    try:
+        from tvu_scraper import TVUScraper
+        from datetime import datetime, timedelta
+        import re
+        
+        scraper = TVUScraper()
+        
+        # Login
+        if not scraper.login(request.mssv, request.password):
+            return {"success": False, "message": "❌ Đăng nhập TVU thất bại!"}
+        
+        # Get schedule
+        schedules = scraper.get_schedule()
+        
+        if not schedules:
+            return {"success": False, "message": "📅 Không tìm thấy lịch học tuần này."}
+        
+        # Filter by day if message mentions specific day
+        message_lower = request.message.lower()
+        today = datetime.now()
+        day_map = {
+            'thứ 2': 'MONDAY', 'thứ hai': 'MONDAY', 't2': 'MONDAY',
+            'thứ 3': 'TUESDAY', 'thứ ba': 'TUESDAY', 't3': 'TUESDAY',
+            'thứ 4': 'WEDNESDAY', 'thứ tư': 'WEDNESDAY', 't4': 'WEDNESDAY',
+            'thứ 5': 'THURSDAY', 'thứ năm': 'THURSDAY', 't5': 'THURSDAY',
+            'thứ 6': 'FRIDAY', 'thứ sáu': 'FRIDAY', 't6': 'FRIDAY',
+            'thứ 7': 'SATURDAY', 'thứ bảy': 'SATURDAY', 't7': 'SATURDAY',
+            'chủ nhật': 'SUNDAY', 'cn': 'SUNDAY'
+        }
+        
+        # Check for relative dates
+        target_day = None
+        day_label = "tuần này"
+        
+        # Try to extract specific date first (DD/MM/YYYY or DD-MM-YYYY)
+        date_pattern = r'(?:ngày\s+)?(\d{1,2})[/-](\d{1,2})[/-](\d{4})'
+        date_match = re.search(date_pattern, message_lower)
+        if date_match:
+            try:
+                day, month, year = int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))
+                target_date = datetime(year, month, day)
+                target_day = target_date.strftime('%A').upper()
+                date_str = target_date.strftime('%d/%m/%Y')
+                day_name = target_date.strftime('%A')
+                
+                # Map to Vietnamese day name
+                day_names = {
+                    'Monday': 'Thứ 2',
+                    'Tuesday': 'Thứ 3',
+                    'Wednesday': 'Thứ 4',
+                    'Thursday': 'Thứ 5',
+                    'Friday': 'Thứ 6',
+                    'Saturday': 'Thứ 7',
+                    'Sunday': 'Chủ nhật'
+                }
+                vn_day = day_names.get(day_name, day_name)
+                day_label = f"{vn_day} ({date_str})"
+            except (ValueError, OverflowError):
+                pass
+        
+        # Hôm qua
+        if target_day is None and ('hôm qua' in message_lower or 'hom qua' in message_lower):
+            yesterday = today - timedelta(days=1)
+            target_day = yesterday.strftime('%A').upper()
+            date_str = yesterday.strftime('%d/%m/%Y')
+            day_label = f"hôm qua ({date_str})"
+        # Mai
+        elif target_day is None and 'mai' in message_lower:
+            tomorrow = today + timedelta(days=1)
+            target_day = tomorrow.strftime('%A').upper()
+            date_str = tomorrow.strftime('%d/%m/%Y')
+            day_label = f"mai ({date_str})"
+        # Mốt (2 ngày sau)
+        elif target_day is None and ('mốt' in message_lower or 'mot' in message_lower):
+            two_days = today + timedelta(days=2)
+            target_day = two_days.strftime('%A').upper()
+            date_str = two_days.strftime('%d/%m/%Y')
+            day_label = f"mốt ({date_str})"
+        # Kia (3 ngày sau)
+        elif target_day is None and 'kia' in message_lower:
+            three_days = today + timedelta(days=3)
+            target_day = three_days.strftime('%A').upper()
+            date_str = three_days.strftime('%d/%m/%Y')
+            day_label = f"kia ({date_str})"
+        # Hôm nay
+        elif target_day is None and ('hôm nay' in message_lower or 'hom nay' in message_lower or 'today' in message_lower or 'hnay' in message_lower):
+            target_day = today.strftime('%A').upper()
+            date_str = today.strftime('%d/%m/%Y')
+            day_label = f"hôm nay ({date_str})"
+        elif target_day is None:
+            # Check for specific day name
+            for keyword, day in day_map.items():
+                if keyword in message_lower:
+                    target_day = day
+                    day_label = keyword
+                    break
+        
+        # Filter schedules by target day
+        if target_day:
+            schedules = [s for s in schedules if s.get('day_of_week') == target_day]
+        
+        if not schedules:
+            return {
+                "success": True,
+                "message": f"📅 {day_label.capitalize()} bạn không có lớp nào.",
+                "schedules": []
+            }
+        
+        # Format response
+        message_text = f"📅 **Lịch học {day_label}:**\n\n"
+        for schedule in schedules:
+            day_vn = {
+                'MONDAY': 'Thứ 2', 'TUESDAY': 'Thứ 3', 'WEDNESDAY': 'Thứ 4',
+                'THURSDAY': 'Thứ 5', 'FRIDAY': 'Thứ 6', 'SATURDAY': 'Thứ 7', 'SUNDAY': 'CN'
+            }.get(schedule.get('day_of_week', ''), '')
+            
+            start_time = schedule.get('start_time', '')[:5]
+            end_time = schedule.get('end_time', '')[:5]
+            
+            message_text += f"🕐 **{start_time} - {end_time}** ({day_vn})\n"
+            message_text += f"   📚 {schedule.get('subject', 'N/A')}\n"
+            message_text += f"   🏫 Phòng {schedule.get('room', 'N/A')}\n"
+            if schedule.get('teacher'):
+                message_text += f"   👨‍🏫 {schedule['teacher']}\n"
+            message_text += "\n"
+        
+        return {
+            "success": True,
+            "message": message_text,
+            "schedules": schedules
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": f"❌ Lỗi: {str(e)}"}
+
+
 @app.post("/api/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)):
     """
@@ -406,8 +660,29 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
     try:
         # Extract token from Authorization header
         token = None
+        user_id = None
         if authorization and authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
+            # Get user_id from token
+            user_id = get_user_id_from_token(token)
+        
+        print(f"\n{'='*60}")
+        print(f"📨 NEW CHAT REQUEST")
+        print(f"Message: {request.message}")
+        print(f"AI Provider: {request.ai_provider}")
+        print(f"Has token: {token is not None}")
+        print(f"User ID: {user_id}")
+        print(f"AGENT_FEATURES_AVAILABLE: {AGENT_FEATURES_AVAILABLE}")
+        print(f"agent_features: {agent_features is not None if 'agent_features' in globals() else 'NOT DEFINED'}")
+        
+        # Debug email intent detection
+        if AGENT_FEATURES_AVAILABLE and agent_features:
+            email_intent = agent_features.detect_email_intent(request.message)
+            gmail_send_intent = agent_features.detect_gmail_send_intent(request.message)
+            print(f"🔍 Email Intent: {email_intent}")
+            print(f"🔍 Gmail Send Intent: {gmail_send_intent}")
+        
+        print(f"{'='*60}\n")
         
         # GOOGLE CLOUD AGENT - Check intents FIRST
         if GOOGLE_CLOUD_AGENT_AVAILABLE and google_cloud_agent:
@@ -421,44 +696,110 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
             
             if gc_result:
                 print(f"🌐 Google Cloud intent detected and handled")
+                # Safely convert to string
+                response_text = gc_result.get('message', '')
+                if not isinstance(response_text, str):
+                    response_text = str(response_text) if not isinstance(response_text, list) else '\n'.join(str(x) for x in response_text)
+                
                 return ChatResponse(
-                    response=gc_result['message'],
+                    response=response_text,
                     model=request.model,
                     rag_enabled=False
                 )
         
         # AGENT FEATURES - Check intents (schedule, grades, email)
-        if AGENT_FEATURES_AVAILABLE and agent_features and token:
+        if AGENT_FEATURES_AVAILABLE and agent_features:
+            # ===== CHECK EMAIL INTENT FIRST (cao nhất) =====
+            # Email patterns rất cụ thể nên ưu tiên trước
+            # Email draft generation KHÔNG cần token
+            if agent_features.detect_email_intent(request.message):
+                print(f"✅ 📧 Detected email intent in: {request.message}")
+                print(f"Token: {token is not None}, User ID: {user_id}")
+                
+                # Check if it's a Gmail API request (read/send/search) - CẦN token
+                if token and user_id and (agent_features.detect_gmail_read_intent(request.message) or 
+                    agent_features.detect_gmail_send_intent(request.message) or
+                    agent_features.detect_gmail_search_intent(request.message)):
+                    # Use OAuth Gmail API - requires authentication
+                    print(f"📧 Using Gmail OAuth API (authenticated) - User ID: {user_id}")
+                    result = agent_features.handle_gmail_request(request.message, token, user_id=user_id)
+                else:
+                    # Email draft generation - NO authentication required
+                    # Check if user provided email address
+                    print(f"📧 Generating email draft (no auth or no token)")
+                    print(f"Will call handle_gmail_send with user_id: {user_id}")
+                    
+                    # Try to use Gmail handler which has better logic
+                    if agent_features.detect_gmail_send_intent(request.message):
+                        # This will auto-generate draft even without OAuth
+                        result = agent_features.handle_gmail_send(request.message, "", user_id=None)
+                    else:
+                        # Fallback to legacy method if available
+                        if token:
+                            gemini_model = genai.GenerativeModel(request.model)
+                            result = agent_features.handle_email_request(request.message, token, gemini_model)
+                        else:
+                            result = {
+                                "success": False,
+                                "message": "📧 Vui lòng cung cấp địa chỉ email người nhận trong câu lệnh.\n\nVí dụ: 'gửi mail xin nghỉ học đến teacher@tvu.edu.vn'"
+                            }
+                
+                # Safely convert result['message'] to string
+                response_text = result.get('message', '')
+                if not isinstance(response_text, str):
+                    if isinstance(response_text, list):
+                        response_text = '\n'.join(str(item) for item in response_text)
+                    else:
+                        response_text = str(response_text)
+                
+                # Extract email_draft if present
+                email_draft_data = result.get('email_draft')
+                email_draft = None
+                if email_draft_data:
+                    print(f"✅ Email draft found: {email_draft_data}")
+                    email_draft = EmailDraft(**email_draft_data)
+                else:
+                    print(f"⚠️ No email_draft in result. Result keys: {result.keys()}")
+                
+                print(f"📧 Returning ChatResponse with email_draft: {email_draft is not None}")
+                
+                return ChatResponse(
+                    response=response_text,
+                    model=request.model,
+                    rag_enabled=False,
+                    email_draft=email_draft
+                )
+            
+            # ===== CHECK SCHEDULE INTENT ===== (CẦN token)
             # Check for schedule intent
-            if agent_features.detect_schedule_intent(request.message):
-                print(f"🔍 Detected schedule intent in: {request.message}")
+            if token and agent_features.detect_schedule_intent(request.message):
+                print(f"📅 Detected schedule intent in: {request.message}")
                 result = agent_features.get_schedule(token, message=request.message, force_sync=False)
                 
+                # Safely convert to string
+                response_text = result.get('message', '')
+                if not isinstance(response_text, str):
+                    response_text = str(response_text) if not isinstance(response_text, list) else '\n'.join(str(x) for x in response_text)
+                
                 return ChatResponse(
-                    response=result['message'],
+                    response=response_text,
                     model=request.model,
                     rag_enabled=False
                 )
             
+            # ===== CHECK GRADE INTENT ===== (CẦN token)
             # Check for grade intent
-            if agent_features.detect_grade_intent(request.message):
-                print(f"🔍 Detected grade intent in: {request.message}")
+            if token and agent_features.detect_grade_intent(request.message):
+                print(f"📊 Detected grade intent in: {request.message}")
                 result = agent_features.get_grades(token)
                 
-                return ChatResponse(
-                    response=result['message'],
-                    model=request.model,
-                    rag_enabled=False
-                )
-            
-            # Check for email intent
-            if agent_features.detect_email_intent(request.message):
-                print(f"🔍 Detected email intent in: {request.message}")
-                gemini_model = genai.GenerativeModel(request.model)
-                result = agent_features.handle_email_request(request.message, token, gemini_model)
+                # Safely convert to string
+                response_text = result.get('message', '')
+                if not isinstance(response_text, str):
+                    response_text = str(response_text) if not isinstance(response_text, list) else '\n'.join(str(x) for x in response_text)
                 
                 return ChatResponse(
-                    response=result['message'],
+                    response=response_text,
                     model=request.model,
                     rag_enabled=False
                 )
@@ -543,9 +884,53 @@ Hãy trả lời dựa trên kiến thức của bạn."""
 **Câu hỏi của học sinh:**
 {request.message}"""
         
-        # Generate response với Gemini
-        model = genai.GenerativeModel(request.model)
-        response = model.generate_content(prompt)
+        # Generate response based on AI provider
+        ai_response = ""
+        actual_model = request.model
+        
+        print(f"📝 Chat request - ai_provider: {request.ai_provider}, model: {request.model}, groq_client: {groq_client is not None}")
+        
+        if request.ai_provider == "groq" and groq_client:
+            # Use Groq AI with user-selected model
+            try:
+                # Accept any model name that looks like a Groq model or use from model parameter
+                groq_model = request.model if request.model else "llama-3.3-70b-versatile"
+                # Validate it's a Groq model
+                if not any(name in groq_model.lower() for name in ['llama', 'mixtral', 'gemma', 'qwen', 'meta-llama']):
+                    groq_model = "llama-3.3-70b-versatile"
+                    
+                print(f"🚀 Using Groq model: {groq_model}")
+                ai_response = groq_client.generate_text(
+                    prompt=request.message,
+                    system_prompt=system_prompt,
+                    model=groq_model
+                )
+                actual_model = f"{groq_model} (Groq)"
+                print(f"✅ Groq response received: {len(ai_response)} chars")
+            except Exception as e:
+                print(f"⚠️ Groq error: {e}, falling back to Gemini")
+                import traceback
+                traceback.print_exc()
+                # Fallback to Gemini with default Gemini model
+                gemini_model = genai.GenerativeModel("gemini-2.0-flash-exp")
+                response = gemini_model.generate_content(prompt)
+                ai_response = response.text
+                actual_model = "gemini-2.0-flash-exp (fallback)"
+        elif request.ai_provider == "groq" and not groq_client:
+            print("❌ Groq requested but groq_client not initialized! Check GROQ_API_KEY")
+            # Fallback to Gemini
+            gemini_model_name = "gemini-2.0-flash-exp"
+            model = genai.GenerativeModel(gemini_model_name)
+            response = model.generate_content(prompt)
+            ai_response = response.text
+            actual_model = f"{gemini_model_name} (Groq unavailable)"
+        else:
+            # Use Gemini (default) - ensure we use Gemini model names
+            gemini_model_name = request.model if 'gemini' in request.model else "gemini-2.0-flash-exp"
+            model = genai.GenerativeModel(gemini_model_name)
+            response = model.generate_content(prompt)
+            ai_response = response.text
+            actual_model = gemini_model_name
         
         # Tạo suggested actions (YouTube, Google Search)
         suggested_actions = []
@@ -582,13 +967,63 @@ Hãy trả lời dựa trên kiến thức của bạn."""
             ))
         
         return ChatResponse(
-            response=response.text,
-            model=request.model,
+            response=ai_response,
+            model=actual_model,
             context_used=context_docs if request.use_rag else None,
             rag_enabled=request.use_rag,
             suggested_actions=suggested_actions
         )
     
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
+
+@app.post("/api/email/send", tags=["Email"])
+async def send_email_confirmed(request: SendEmailRequest, authorization: Optional[str] = Header(None)):
+    """
+    Send email after user confirms the draft
+    
+    This endpoint is called when user clicks "Send" button in email preview
+    """
+    try:
+        # Get user_id from token if not provided
+        user_id = request.user_id
+        if not user_id and authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+            user_id = get_user_id_from_token(token)
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="User not authenticated")
+        
+        # Import Gmail service
+        from gmail_service import ai_send_email
+        
+        # Send email
+        result = ai_send_email(
+            user_id=user_id,
+            to=request.to,
+            subject=request.subject,
+            body=request.body
+        )
+        
+        if result.get('success'):
+            return {
+                "success": True,
+                "message": f"✅ Email đã gửi thành công tới {request.to}!",
+                "sent_at": datetime.now().strftime('%H:%M %d/%m/%Y')
+            }
+        else:
+            if result.get('need_auth'):
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Cần kết nối Google Account trong Settings"
+                )
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "Không thể gửi email")
+            )
+    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
 
@@ -837,6 +1272,79 @@ async def list_models():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
 
+@app.get("/api/models/groq", tags=["Models"])
+async def list_groq_models():
+    """
+    Liệt kê các Groq models có sẵn từ API
+    
+    Fetches models từ Groq API: https://api.groq.com/openai/v1/models
+    Falls back to hardcoded list nếu API fail
+    """
+    try:
+        print(f"📋 GET /api/models/groq - groq_client initialized: {groq_client is not None}")
+        
+        # Try to get models from Groq API
+        if groq_client:
+            models = groq_client.get_models_from_api()
+            print(f"✅ Fetched {len(models)} models from Groq API")
+            return {
+                "models": models,
+                "provider": "Groq",
+                "api_url": "https://console.groq.com/",
+                "total": len(models),
+                "source": "api"
+            }
+        
+        # Fallback if no groq_client
+        fallback_models = [
+            {
+                "id": "llama-3.3-70b-versatile",
+                "name": "Llama 3.3 70B Versatile",
+                "description": "Best overall performance - Latest",
+                "context": 128000,
+                "speed": "fast"
+            },
+            {
+                "id": "llama-3.1-70b-versatile",
+                "name": "Llama 3.1 70B",
+                "description": "Best overall performance",
+                "context": 32768,
+                "speed": "fast"
+            },
+            {
+                "id": "llama-3.1-8b-instant",
+                "name": "Llama 3.1 8B Instant",
+                "description": "Fastest inference",
+                "context": 32768,
+                "speed": "ultra-fast"
+            },
+            {
+                "id": "mixtral-8x7b-32768",
+                "name": "Mixtral 8x7B",
+                "description": "Long context specialist",
+                "context": 32768,
+                "speed": "fast"
+            },
+            {
+                "id": "gemma2-9b-it",
+                "name": "Gemma 2 9B",
+                "description": "Lightweight & efficient",
+                "context": 8192,
+                "speed": "ultra-fast"
+            }
+        ]
+        
+        return {
+            "models": fallback_models,
+            "provider": "Groq",
+            "api_url": "https://console.groq.com/",
+            "total": len(fallback_models),
+            "source": "fallback",
+            "warning": "GROQ_API_KEY not configured"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
+
 # ============================================================================
 # AI EXTENDED APIS
 # ============================================================================
@@ -1073,23 +1581,414 @@ async def ingest_document(request: IngestRequest):
 # CREDENTIAL MANAGER INTEGRATION
 # ============================================================================
 
-# Import credential API router
+# Import credential API router - DISABLED due to heavy dependencies
+# To enable: pip install sentence-transformers (takes long time)
+CREDENTIAL_API_AVAILABLE = False
+print("⚠️  Credential Manager API disabled (sentence-transformers too heavy)")
+print("   AI semantic search for credentials not available")
+
+# Uncomment below to enable (requires sentence-transformers)
+# try:
+#     from credential_api import router as credential_router
+#     app.include_router(credential_router)
+#     CREDENTIAL_API_AVAILABLE = True
+#     print("✅ Credential Manager API loaded")
+# except Exception as e:
+#     print(f"⚠️  Credential Manager API error: {e}")
+
+# ============================================================================
+# TEST TVU SCHEDULE ENDPOINT (For quick testing)
+# ============================================================================
 try:
-    from credential_api import router as credential_router
-    app.include_router(credential_router)
-    CREDENTIAL_API_AVAILABLE = True
-    print("✅ Credential Manager API loaded")
+    from tvu_scraper import TVUScraper
+    TVU_SCRAPER_AVAILABLE = True
+    print("✅ TVU Scraper loaded")
 except ImportError as e:
-    CREDENTIAL_API_AVAILABLE = False
-    print(f"⚠️  Credential Manager API not available: {e}")
-    print("   System will work without AI semantic search for credentials")
-    print("   To enable: pip install chromadb sentence-transformers")
+    TVU_SCRAPER_AVAILABLE = False
+    print(f"⚠️  TVU Scraper not available: {e}")
+
+class TVUTestRequest(BaseModel):
+    mssv: str
+    password: str
+    message: str = "Hôm nay tôi học gì?"
+
+@app.post("/api/test/tvu-schedule", tags=["Test - TVU"])
+async def test_tvu_schedule(request: TVUTestRequest):
+    """
+    🧪 Test endpoint - Lấy thời khóa biểu TVU trực tiếp (không cần đăng nhập hệ thống)
+    
+    - **mssv**: Mã số sinh viên TVU
+    - **password**: Mật khẩu
+    - **message**: Câu hỏi (vd: "Hôm nay tôi học gì?", "tuần này học gì?")
+    """
+    if not TVU_SCRAPER_AVAILABLE:
+        raise HTTPException(status_code=500, detail="TVU Scraper not available")
+    
+    try:
+        scraper = TVUScraper()
+        
+        # Login to TVU
+        if not scraper.login(request.mssv, request.password):
+            return {"success": False, "message": "❌ Đăng nhập TVU thất bại. Kiểm tra lại MSSV và mật khẩu."}
+        
+        # Get schedule
+        schedules = scraper.get_schedule()
+        
+        if not schedules:
+            return {"success": True, "message": "📅 Không có lịch học tuần này.", "schedules": []}
+        
+        # Determine what user is asking for
+        message_lower = request.message.lower()
+        
+        # Filter by day if asking for specific day
+        from datetime import datetime
+        today = datetime.now()
+        day_names = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+        today_name = day_names[today.weekday()]
+        
+        vietnamese_days = {
+            'MONDAY': 'Thứ 2',
+            'TUESDAY': 'Thứ 3', 
+            'WEDNESDAY': 'Thứ 4',
+            'THURSDAY': 'Thứ 5',
+            'FRIDAY': 'Thứ 6',
+            'SATURDAY': 'Thứ 7',
+            'SUNDAY': 'Chủ nhật'
+        }
+        
+        # Check if asking for today
+        if 'hôm nay' in message_lower or 'today' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == today_name]
+            day_label = f"hôm nay ({vietnamese_days[today_name]})"
+        # Check for specific day
+        elif 'thứ 2' in message_lower or 'thứ hai' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'MONDAY']
+            day_label = 'Thứ 2'
+        elif 'thứ 3' in message_lower or 'thứ ba' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'TUESDAY']
+            day_label = 'Thứ 3'
+        elif 'thứ 4' in message_lower or 'thứ tư' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'WEDNESDAY']
+            day_label = 'Thứ 4'
+        elif 'thứ 5' in message_lower or 'thứ năm' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'THURSDAY']
+            day_label = 'Thứ 5'
+        elif 'thứ 6' in message_lower or 'thứ sáu' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'FRIDAY']
+            day_label = 'Thứ 6'
+        elif 'thứ 7' in message_lower or 'thứ bảy' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'SATURDAY']
+            day_label = 'Thứ 7'
+        elif 'chủ nhật' in message_lower:
+            schedules = [s for s in schedules if s.get('dayOfWeek') == 'SUNDAY']
+            day_label = 'Chủ nhật'
+        else:
+            day_label = 'tuần này'
+        
+        # Format response
+        if not schedules:
+            return {
+                "success": True,
+                "message": f"📅 {day_label.capitalize()} bạn không có lớp nào.",
+                "schedules": []
+            }
+        
+        # Group by day
+        by_day = {}
+        for s in schedules:
+            day = s.get('dayOfWeek', 'UNKNOWN')
+            if day not in by_day:
+                by_day[day] = []
+            by_day[day].append(s)
+        
+        # Sort days
+        day_order = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']
+        
+        message_text = f"📅 **Lịch học {day_label}:**\n\n"
+        
+        for day in day_order:
+            if day in by_day:
+                message_text += f"**{vietnamese_days[day]}:**\n"
+                for s in sorted(by_day[day], key=lambda x: x.get('startTime', '')):
+                    start_time = s.get('startTime', '')[:5]
+                    end_time = s.get('endTime', '')[:5]
+                    message_text += f"  🕐 {start_time} - {end_time}\n"
+                    message_text += f"  📚 {s.get('subject', 'N/A')}\n"
+                    message_text += f"  🏫 Phòng: {s.get('room', 'N/A')}\n"
+                    if s.get('teacher'):
+                        message_text += f"  👨‍🏫 GV: {s['teacher']}\n"
+                    message_text += "\n"
+        
+        return {
+            "success": True,
+            "message": message_text,
+            "schedules": schedules,
+            "count": len(schedules)
+        }
+        
+    except Exception as e:
+        return {"success": False, "message": f"❌ Lỗi: {str(e)}"}
+
+# ============================================================================
+# DOCUMENT INTELLIGENCE API
+# ============================================================================
+
+# Initialize Document Intelligence service
+doc_intelligence_service = None
+if DOCUMENT_INTELLIGENCE_AVAILABLE:
+    try:
+        doc_intelligence_service = create_document_intelligence_service(GEMINI_API_KEY)
+        print("✅ Document Intelligence initialized")
+    except Exception as e:
+        print(f"⚠️ Document Intelligence init failed: {e}")
+
+class ProcessDocumentRequest(BaseModel):
+    file_path: str
+    num_cards: int = 10
+    difficulty: str = "medium"
+    include_summary: bool = True
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "file_path": "C:/Documents/lecture_notes.pdf",
+                "num_cards": 10,
+                "difficulty": "medium",
+                "include_summary": True
+            }
+        }
+    )
+
+class DocumentTextRequest(BaseModel):
+    text: str
+    num_cards: int = 10
+    difficulty: str = "medium"
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "text": "Python là ngôn ngữ lập trình...",
+                "num_cards": 5,
+                "difficulty": "easy"
+            }
+        }
+    )
+
+@app.post("/api/documents/process", tags=["Document Intelligence"])
+async def process_document_to_flashcards(request: ProcessDocumentRequest):
+    """
+    📄 Upload PDF/DOCX/TXT → AI tự động tạo Flashcards
+    
+    **Tính năng:**
+    - Trích xuất text từ PDF, DOCX, TXT, ảnh (OCR)
+    - AI tóm tắt nội dung
+    - Trích xuất key concepts
+    - Tự động tạo flashcards
+    
+    **Parameters:**
+    - file_path: Đường dẫn file (local path hoặc URL)
+    - num_cards: Số lượng flashcards cần tạo (default: 10)
+    - difficulty: Độ khó (easy/medium/hard)
+    - include_summary: Có tạo summary không (default: true)
+    
+    **Returns:**
+    ```json
+    {
+      "success": true,
+      "file_name": "lecture_notes.pdf",
+      "summary": "Tóm tắt nội dung...",
+      "key_concepts": ["Concept 1", "Concept 2", ...],
+      "flashcards": [
+        {
+          "question": "Câu hỏi?",
+          "answer": "Câu trả lời",
+          "hint": "Gợi ý...",
+          "explanation": "Giải thích chi tiết..."
+        }
+      ],
+      "num_flashcards": 10
+    }
+    ```
+    """
+    if not DOCUMENT_INTELLIGENCE_AVAILABLE or not doc_intelligence_service:
+        raise HTTPException(
+            status_code=503,
+            detail="Document Intelligence service not available. Please install dependencies: pip install pdfplumber PyPDF2 python-docx"
+        )
+    
+    try:
+        # Process document
+        result = doc_intelligence_service.process_document_to_flashcards(
+            file_path=request.file_path,
+            num_cards=request.num_cards,
+            difficulty=request.difficulty,
+            include_summary=request.include_summary
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+        
+        return result
+        
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
+
+@app.post("/api/documents/text-to-flashcards", tags=["Document Intelligence"])
+async def text_to_flashcards(request: DocumentTextRequest):
+    """
+    📝 Text → AI tạo Flashcards
+    
+    Paste text trực tiếp, AI sẽ tạo flashcards
+    
+    **Parameters:**
+    - text: Nội dung cần tạo flashcards
+    - num_cards: Số lượng flashcards
+    - difficulty: Độ khó (easy/medium/hard)
+    
+    **Use cases:**
+    - Copy-paste từ lecture slides
+    - Paste từ website/blog
+    - Nhập text tự viết
+    """
+    if not DOCUMENT_INTELLIGENCE_AVAILABLE or not doc_intelligence_service:
+        raise HTTPException(
+            status_code=503,
+            detail="Document Intelligence service not available"
+        )
+    
+    try:
+        # Validate text length
+        if len(request.text) < 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Text quá ngắn. Cần ít nhất 50 ký tự để tạo flashcards."
+            )
+        
+        # Generate flashcards from text
+        flashcards = doc_intelligence_service.generate_flashcards_from_text(
+            text=request.text,
+            num_cards=request.num_cards,
+            difficulty=request.difficulty
+        )
+        
+        if not flashcards:
+            raise HTTPException(
+                status_code=500,
+                detail="Không thể tạo flashcards. Vui lòng thử lại hoặc thay đổi nội dung."
+            )
+        
+        return {
+            "success": True,
+            "text_length": len(request.text),
+            "flashcards": flashcards,
+            "num_flashcards": len(flashcards)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/api/documents/summarize", tags=["Document Intelligence"])
+async def summarize_document(request: ProcessDocumentRequest):
+    """
+    📄 Tóm tắt Document (PDF/DOCX/TXT)
+    
+    Upload file, AI sẽ tóm tắt nội dung chính
+    """
+    if not DOCUMENT_INTELLIGENCE_AVAILABLE or not doc_intelligence_service:
+        raise HTTPException(
+            status_code=503,
+            detail="Document Intelligence service not available"
+        )
+    
+    try:
+        # Extract text
+        text = doc_intelligence_service.extract_text(request.file_path)
+        
+        if not text or len(text) < 100:
+            raise HTTPException(
+                status_code=400,
+                detail="Document quá ngắn hoặc không có nội dung văn bản"
+            )
+        
+        # Summarize
+        summary = doc_intelligence_service.summarize_document(text, max_length=500)
+        
+        return {
+            "success": True,
+            "file_name": Path(request.file_path).name,
+            "original_length": len(text),
+            "summary": summary,
+            "summary_length": len(summary)
+        }
+        
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/api/documents/capabilities", tags=["Document Intelligence"])
+async def get_document_capabilities():
+    """
+    ℹ️ Kiểm tra khả năng xử lý documents
+    
+    Returns thông tin về các loại file được hỗ trợ
+    """
+    capabilities = {
+        "service_available": DOCUMENT_INTELLIGENCE_AVAILABLE and doc_intelligence_service is not None,
+        "supported_formats": [],
+        "features": []
+    }
+    
+    if DOCUMENT_INTELLIGENCE_AVAILABLE:
+        try:
+            from document_intelligence_service import (
+                PDFPLUMBER_AVAILABLE,
+                PYPDF2_AVAILABLE,
+                DOCX_AVAILABLE,
+                OCR_AVAILABLE
+            )
+            
+            if PDFPLUMBER_AVAILABLE or PYPDF2_AVAILABLE:
+                capabilities["supported_formats"].append("PDF (.pdf)")
+            if DOCX_AVAILABLE:
+                capabilities["supported_formats"].append("Word (.docx)")
+            if OCR_AVAILABLE:
+                capabilities["supported_formats"].append("Images (.png, .jpg, .jpeg) with OCR")
+            
+            capabilities["supported_formats"].append("Text (.txt)")
+            
+            capabilities["features"] = [
+                "Auto-generate flashcards from documents",
+                "Document summarization",
+                "Key concepts extraction",
+                "Text extraction from multiple formats"
+            ]
+            
+            if OCR_AVAILABLE:
+                capabilities["features"].append("OCR for scanned documents/images")
+            
+        except ImportError:
+            pass
+    
+    return capabilities
 
 # ============================================================================
 # MAIN
 # ============================================================================
 
 if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        reload=False,  # Disable auto-reload to prevent watchfiles issues
+        log_level="info"
+    )
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     print("=" * 60)

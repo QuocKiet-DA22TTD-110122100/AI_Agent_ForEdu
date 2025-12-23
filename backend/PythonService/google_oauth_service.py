@@ -47,9 +47,19 @@ cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 
 # OAuth scopes
 SCOPES = [
+    # Google Cloud APIs
     "https://www.googleapis.com/auth/cloud-platform",
     "https://www.googleapis.com/auth/cloud-vision",
     "https://www.googleapis.com/auth/cloud-translation",
+    # Gmail API
+    "https://www.googleapis.com/auth/gmail.readonly",     # Read emails
+    "https://www.googleapis.com/auth/gmail.send",         # Send emails
+    "https://www.googleapis.com/auth/gmail.compose",      # Compose/draft emails
+    "https://www.googleapis.com/auth/gmail.modify",       # Modify labels, mark read/unread
+    # Calendar API
+    "https://www.googleapis.com/auth/calendar",           # Full calendar access
+    "https://www.googleapis.com/auth/calendar.events",    # Manage events
+    # User info
     "openid",
     "email",
     "profile"

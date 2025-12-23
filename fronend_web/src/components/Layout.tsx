@@ -11,7 +11,9 @@ import {
   Calendar,
   LogOut,
   Menu,
-  X
+  X,
+  CreditCard,
+  Sparkles
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
@@ -31,6 +33,10 @@ const Layout = ({ children }: LayoutProps) => {
     { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', path: '/dashboard' },
     { icon: <BookOpen className="w-5 h-5" />, label: 'Courses', path: '/courses' },
     { icon: <MessageSquare className="w-5 h-5" />, label: 'AI Chat', path: '/chat' },
+    { icon: <CreditCard className="w-5 h-5" />, label: 'Flashcards', path: '/flashcards' },
+    { icon: <Sparkles className="w-5 h-5" />, label: 'AI Flashcards', path: '/document-intelligence', badge: '🆕' },
+    { icon: <Calendar className="w-5 h-5" />, label: 'Schedule (TVU)', path: '/schedule' },
+    { icon: <Calendar className="w-5 h-5" />, label: 'Google Calendar', path: '/calendar' },
     { icon: <User className="w-5 h-5" />, label: 'Profile', path: '/profile' },
     { icon: <Settings className="w-5 h-5" />, label: 'Settings', path: '/settings' },
   ];
@@ -93,7 +99,7 @@ const Layout = ({ children }: LayoutProps) => {
                 key={item.path}
                 to={item.path}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 relative ${
                   isActive
                     ? 'bg-primary-600 text-white shadow-lg'
                     : 'text-gray-700 hover:bg-gray-100'
@@ -101,6 +107,11 @@ const Layout = ({ children }: LayoutProps) => {
               >
                 {item.icon}
                 <span className="font-medium">{item.label}</span>
+                {item.badge && (
+                  <span className="ml-auto text-xs px-2 py-0.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full">
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             );
           })}

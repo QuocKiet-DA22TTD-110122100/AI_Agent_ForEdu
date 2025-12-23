@@ -32,10 +32,12 @@ export const chatService = {
     return response.data.response;
   },
 
-  sendMessageWithActions: async (message: string, useRag: boolean = false): Promise<any> => {
+  sendMessageWithActions: async (message: string, useRag: boolean = false, aiProvider: string = 'gemini', groqModel?: string): Promise<any> => {
     const response = await fastApi.post(ENDPOINTS.AI.CHAT, {
       message,
       use_rag: useRag,
+      ai_provider: aiProvider,
+      model: aiProvider === 'groq' && groqModel ? groqModel : undefined,
     });
     return response.data;
   },
@@ -43,5 +45,10 @@ export const chatService = {
   getModels: async (): Promise<string[]> => {
     const response = await fastApi.get(ENDPOINTS.AI.MODELS);
     return response.data.models;
+  },
+
+  getGroqModels: async (): Promise<any> => {
+    const response = await fastApi.get(ENDPOINTS.AI.GROQ_MODELS);
+    return response.data;
   },
 };

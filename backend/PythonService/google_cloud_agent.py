@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class GoogleCloudAgent:
     """Agent có khả năng sử dụng Google Cloud services"""
     
-    def __init__(self, google_cloud_url: str = "http://localhost:8002"):
+    def __init__(self, google_cloud_url: str = "http://localhost:8004"):
         self.google_cloud_url = google_cloud_url
     
     # ========================================================================
@@ -72,6 +72,21 @@ class GoogleCloudAgent:
             r'sentiment',
             r'tích cực.*tiêu cực',
             r'phân tích.*đoạn'
+        ]
+        return any(re.search(pattern, message.lower()) for pattern in patterns)
+    
+    def detect_calendar_intent(self, message: str) -> bool:
+        """Phát hiện intent liên quan đến lịch"""
+        patterns = [
+            r'tạo.*lịch',
+            r'thêm.*sự kiện',
+            r'nhắc.*tôi',
+            r'calendar.*event',
+            r'lịch.*hôm nay',
+            r'lịch.*tuần',
+            r'meeting',
+            r'cuộc họp',
+            r'deadline'
         ]
         return any(re.search(pattern, message.lower()) for pattern in patterns)
     
@@ -378,15 +393,194 @@ class GoogleCloudAgent:
             }
     
     # ========================================================================
+    # GOOGLE CALENDAR API
+    # ========================================================================
+    
+    def create_calendar_event(self, user_id: int, summary: str, start_time: str, 
+                             end_time: str, description: str = None, 
+                             location: str = None) -> Dict:
+        """
+        Tạo sự kiện trên Google Calendar
+        """
+        try:
+            response = requests.post(
+                f"{self.google_cloud_url}/api/google-cloud/calendar/create-event",
+                json={
+                    "user_id": user_id,
+                    "summary": summary,
+                    "description": description,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "location": location
+                },
+                timeout=10
+            )
+            
+            if response.status_code not in [200, 201]:
+                return {
+                    "success": False,
+                    "message": f"❌ Lỗi Calendar API: {response.text}"
+                }
+            
+            data = response.json()
+            event = data['event']
+            
+            message = "📅 **Đã tạo sự kiện trên Google Calendar:**\n\n"
+            message += f"**Tiêu đề:** {event['summary']}\n"
+            message += f"**Thời gian:** {event['start']} → {event['end']}\n"
+            if location:
+                message += f"**Địa điểm:** {location}\n"
+            message += f"\n🔗 [Xem trên Calendar]({event['html_link']})"
+            
+            return {
+                "success": True,
+                "message": message,
+                "event": event
+            }
+        
+        except Exception as e:
+            logger.error(f"Calendar API error: {e}")
+            return {
+                "success": False,
+                "message": f"❌ Lỗi: {str(e)}"
+            }
+    
+    def get_today_calendar_events(self, user_id: int) -> Dict:
+        """
+        Lấy lịch hôm nay
+        """
+        try:
+            response = requests.get(
+                f"{self.google_cloud_url}/api/google-cloud/calendar/today-events/{user_id}",
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                return {
+                    "success": False,
+                    "message": f"❌ Lỗi Calendar API: {response.text}"
+                }
+            
+            data = response.json()
+            events = data.get('events', [])
+            
+            if not events:
+                return {
+                    "success": True,
+                    "message": "📅 Bạn không có sự kiện nào hôm nay!",
+                    "events": []
+                }
+            
+            message = f"📅 **Lịch hôm nay ({data['count']} sự kiện):**\n\n"
+            
+            for i, event in enumerate(events, 1):
+                start_time = event['start'].split('T')[1][:5] if 'T' in event['start'] else event['start']
+                message += f"**{i}. {event['summary']}**\n"
+                message += f"   ⏰ {start_time}\n"
+                if event.get('location'):
+                    message += f"   📍 {event['location']}\n"
+                message += "\n"
+            
+            return {
+                "success": True,
+                "message": message,
+                "events": events
+            }
+        
+        except Exception as e:
+            logger.error(f"Calendar API error: {e}")
+            return {
+                "success": False,
+                "message": f"❌ Lỗi: {str(e)}"
+            }
+    
+    def parse_calendar_request(self, message: str) -> Dict:
+        """
+        Phân tích message để trích xuất thông tin event
+        """
+        from datetime import datetime, timedelta
+        import re
+        
+        # Extract event title
+        title_patterns = [
+            r'tạo.*lịch[:\s]+(.+?)(?:vào|lúc|$)',
+            r'thêm.*sự kiện[:\s]+(.+?)(?:vào|lúc|$)',
+            r'nhắc.*tôi[:\s]+(.+?)(?:vào|lúc|$)'
+        ]
+        
+        title = None
+        for pattern in title_patterns:
+            match = re.search(pattern, message.lower())
+            if match:
+                title = match.group(1).strip()
+                break
+        
+        if not title:
+            title = "Sự kiện mới"
+        
+        # Parse time
+        now = datetime.now()
+        start_time = now + timedelta(hours=1)  # Default: 1 hour from now
+        duration = 1  # Default: 1 hour
+        
+        # Time patterns
+        if 'hôm nay' in message.lower():
+            time_match = re.search(r'(\d{1,2})[:\.](\d{2})', message)
+            if time_match:
+                hour = int(time_match.group(1))
+                minute = int(time_match.group(2))
+                start_time = now.replace(hour=hour, minute=minute, second=0)
+        
+        elif 'ngày mai' in message.lower() or 'tomorrow' in message.lower():
+            start_time = now + timedelta(days=1)
+            time_match = re.search(r'(\d{1,2})[:\.](\d{2})', message)
+            if time_match:
+                hour = int(time_match.group(1))
+                minute = int(time_match.group(2))
+                start_time = start_time.replace(hour=hour, minute=minute, second=0)
+        
+        # Duration
+        duration_match = re.search(r'(\d+)\s*(giờ|hour)', message.lower())
+        if duration_match:
+            duration = int(duration_match.group(1))
+        
+        end_time = start_time + timedelta(hours=duration)
+        
+        return {
+            "summary": title,
+            "start_time": start_time.isoformat() + "+07:00",
+            "end_time": end_time.isoformat() + "+07:00",
+            "description": None
+        }
+    
+    # ========================================================================
     # MAIN HANDLER
     # ========================================================================
     
     def handle_google_cloud_request(self, message: str, token: str, 
                                     image_url: str = None, 
-                                    audio_base64: str = None) -> Optional[Dict]:
+                                    audio_base64: str = None,
+                                    user_id: int = None) -> Optional[Dict]:
         """
         Main handler - tự động phát hiện intent và gọi API phù hợp
         """
+        # Calendar - List events
+        if 'lịch hôm nay' in message.lower() or 'today calendar' in message.lower():
+            if user_id:
+                return self.get_today_calendar_events(user_id=user_id)
+        
+        # Calendar - Create event
+        if self.detect_calendar_intent(message):
+            if user_id:
+                event_params = self.parse_calendar_request(message)
+                return self.create_calendar_event(
+                    user_id=user_id,
+                    summary=event_params['summary'],
+                    start_time=event_params['start_time'],
+                    end_time=event_params['end_time'],
+                    description=event_params.get('description')
+                )
+        
         # Vision
         if self.detect_vision_intent(message) and image_url:
             return self.analyze_image(image_url=image_url)

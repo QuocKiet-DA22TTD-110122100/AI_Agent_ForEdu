@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
 import VoiceChatButton from '../components/VoiceChatButton';
 import QuotaWarningBanner from '../components/QuotaWarningBanner';
+import { EmailDraftPreview } from '../components/EmailDraftPreview';
 import { chatService } from '../services/chatService';
 import { springApi } from '../services/api';
 import { useVoiceChat } from '../hooks/useVoiceChat';
@@ -27,6 +28,13 @@ interface ToolAction {
   embed_url?: string;
 }
 
+interface EmailDraft {
+  to: string;
+  subject: string;
+  body: string;
+  user_id?: number;
+}
+
 interface Message {
   id: string;
   sender: 'user' | 'ai';
@@ -36,6 +44,18 @@ interface Message {
   retryable?: boolean; // Can retry if failed
   actions?: ActionLink[]; // Suggested action links
   toolAction?: ToolAction; // Auto-execute action
+  emailDraft?: EmailDraft; // Email draft for preview
+}
+
+type ChatMode = 'normal' | 'google-cloud' | 'rag' | 'agent';
+type AiProvider = 'gemini' | 'groq';
+
+interface GroqModel {
+  id: string;
+  name: string;
+  description: string;
+  context: number;
+  speed: string;
 }
 
 const ChatPage = () => {
@@ -44,6 +64,10 @@ const ChatPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('normal');
+  const [aiProvider, setAiProvider] = useState<AiProvider>('gemini');
+  const [selectedGroqModel, setSelectedGroqModel] = useState('llama-3.1-70b-versatile');
+  const [groqModels, setGroqModels] = useState<GroqModel[]>([]);
   const [useRag, setUseRag] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(true); // Auto-read AI responses
   const [showQuotaWarning, setShowQuotaWarning] = useState(false);
@@ -107,6 +131,65 @@ const ChatPage = () => {
     }
   }, [sessions]);
 
+  // Fetch Groq models when provider changes to groq
+  useEffect(() => {
+    if (aiProvider === 'groq') {
+      console.log('🔄 Fetching Groq models...');
+      // Hardcode models first para test - remove later
+      const hardcodedModels = [
+        {
+          "id": "llama-3.1-70b-versatile",
+          "name": "Llama 3.1 70B",
+          "description": "Best overall performance",
+          "context": 32768,
+          "speed": "fast"
+        },
+        {
+          "id": "llama-3.1-8b-instant",
+          "name": "Llama 3.1 8B Instant",
+          "description": "Fastest inference",
+          "context": 32768,
+          "speed": "ultra-fast"
+        },
+        {
+          "id": "mixtral-8x7b-32768",
+          "name": "Mixtral 8x7B",
+          "description": "Long context specialist",
+          "context": 32768,
+          "speed": "fast"
+        },
+        {
+          "id": "gemma2-9b-it",
+          "name": "Gemma 2 9B",
+          "description": "Lightweight & efficient",
+          "context": 8192,
+          "speed": "ultra-fast"
+        }
+      ];
+      
+      console.log('✅ Using hardcoded Groq models');
+      setGroqModels(hardcodedModels);
+      
+      // Try to fetch from API in background
+      fetch('http://localhost:8000/api/models/groq')
+        .then(res => {
+          console.log('📊 API Response status:', res.status);
+          return res.json();
+        })
+        .then(data => {
+          console.log('📦 API Response data:', data);
+          const models = data.models || [];
+          console.log('✅ Setting API models:', models);
+          if (models.length > 0) {
+            setGroqModels(models);
+          }
+        })
+        .catch(err => {
+          console.warn('⚠️  Could not fetch from API, using hardcoded models:', err);
+        });
+    }
+  }, [aiProvider]);
+
   // Convert backend messages to display format
   useEffect(() => {
     console.log('📥 Raw sessionMessages from backend:', sessionMessages);
@@ -155,6 +238,15 @@ const ChatPage = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Auto-adjust RAG based on mode
+  useEffect(() => {
+    if (chatMode === 'rag') {
+      setUseRag(true);
+    } else if (chatMode === 'normal' || chatMode === 'google-cloud' || chatMode === 'agent') {
+      setUseRag(false);
+    }
+  }, [chatMode]);
 
   // Auto-send when voice transcript is complete
   useEffect(() => {
@@ -215,17 +307,40 @@ const ChatPage = () => {
 
       // Get AI response
       console.log('Getting AI response...');
-      const aiResponse = await chatService.sendMessageWithActions(userMessageText, useRag);
-      console.log('AI response received:', aiResponse.response.substring(0, 50) + '...');
+      const aiResponse = await chatService.sendMessageWithActions(
+        userMessageText, 
+        useRag, 
+        aiProvider,
+        aiProvider === 'groq' ? selectedGroqModel : undefined
+      );
+      
+      // Safely convert response to string (handle arrays and objects)
+      let responseText = '';
+      if (typeof aiResponse.response === 'string') {
+        responseText = aiResponse.response;
+      } else if (Array.isArray(aiResponse.response)) {
+        // If response is an array, join it or stringify it
+        responseText = aiResponse.response.flat(Infinity).join('\n');
+      } else if (typeof aiResponse.response === 'object') {
+        responseText = JSON.stringify(aiResponse.response, null, 2);
+      } else {
+        responseText = String(aiResponse.response);
+      }
+      
+      console.log('AI response received:', responseText.substring(0, 100) + '...');
+      console.log('🔍 Email draft from API:', aiResponse.email_draft);
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
-        text: aiResponse.response,
+        text: responseText,
         timestamp: new Date(),
         actions: aiResponse.suggested_actions || [],
         toolAction: aiResponse.tool_action,
+        emailDraft: aiResponse.email_draft, // Add email draft if present
       };
+      
+      console.log('📧 Message created with emailDraft:', aiMessage.emailDraft);
       
       // Add AI message to UI
       setMessages((prev) => {
@@ -248,14 +363,18 @@ const ChatPage = () => {
         }, 800); // Delay 800ms để user đọc message trước
       }
 
-      // Save AI message to database
-      console.log('Saving AI message to database...');
-      const savedAIMsg = await saveMessageMutation.mutateAsync({
-        sessionId: currentSessionId,
-        sender: 'AI',
-        message: aiResponse.response,
-      });
-      console.log('AI message saved:', savedAIMsg);
+      // Save AI message to database (skip email draft messages)
+      if (!aiResponse.email_draft) {
+        console.log('Saving AI message to database...');
+        const savedAIMsg = await saveMessageMutation.mutateAsync({
+          sessionId: currentSessionId,
+          sender: 'AI',
+          message: aiResponse.response,
+        });
+        console.log('AI message saved:', savedAIMsg);
+      } else {
+        console.log('⏭️ Skipping database save for email draft message');
+      }
 
     } catch (error: any) {
       console.error('Error sending message:', error);
@@ -389,6 +508,102 @@ const ChatPage = () => {
                   </p>
                 </div>
               </div>
+
+              {/* Mode Selector */}
+              <div className="flex items-center space-x-2 bg-gray-100 rounded-xl p-1">
+                <button
+                  onClick={() => setChatMode('normal')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    chatMode === 'normal'
+                      ? 'bg-white text-primary-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="Normal AI Chat"
+                >
+                  🤖 Normal
+                </button>
+                <button
+                  onClick={() => setChatMode('google-cloud')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    chatMode === 'google-cloud'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="Google Cloud APIs: Translation, Vision, Sentiment"
+                >
+                  🌐 Cloud
+                </button>
+                <button
+                  onClick={() => setChatMode('rag')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    chatMode === 'rag'
+                      ? 'bg-white text-green-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="RAG Mode: Search knowledge base"
+                >
+                  📚 RAG
+                </button>
+                <button
+                  onClick={() => setChatMode('agent')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    chatMode === 'agent'
+                      ? 'bg-white text-purple-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="Agent Mode: Schedule, Grades, Credentials"
+                >
+                  🎓 Agent
+                </button>
+              </div>
+
+              {/* AI Provider Selector */}
+              <div className="flex items-center space-x-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-1 border border-purple-200">
+                <button
+                  onClick={() => setAiProvider('gemini')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    aiProvider === 'gemini'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
+                      : 'text-purple-600 hover:bg-white/50'
+                  }`}
+                  title="Google Gemini 2.5 Flash"
+                >
+                  ✨ Gemini
+                </button>
+                <button
+                  onClick={() => setAiProvider('groq')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    aiProvider === 'groq'
+                      ? 'bg-gradient-to-r from-gray-800 to-gray-900 text-white shadow-md'
+                      : 'text-gray-700 hover:bg-white/50'
+                  }`}
+                  title="Groq LPU Inference (Fast)"
+                >
+                  ⚡ Groq
+                </button>
+              </div>
+
+              {/* Groq Model Selector - Show only when Groq is selected */}
+              {aiProvider === 'groq' && groqModels.length > 0 && (
+                <select
+                  value={selectedGroqModel}
+                  onChange={(e) => setSelectedGroqModel(e.target.value)}
+                  className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  title="Select Groq Model"
+                >
+                  {groqModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} - {model.description} ({model.speed})
+                    </option>
+                  ))}
+                </select>
+              )}
+              {aiProvider === 'groq' && groqModels.length === 0 && (
+                <div className="text-xs text-orange-600 font-semibold">
+                  Loading Groq models...
+                </div>
+              )}
+
               <div className="flex items-center space-x-4">
                 <button
                   onClick={handleNewSession}
@@ -427,59 +642,75 @@ const ChatPage = () => {
                   }`}>
                     {message.sender === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                   </div>
-                  <div className={`rounded-2xl px-4 py-3 ${
-                    message.sender === 'user'
-                      ? 'bg-gradient-to-br from-purple-600 to-purple-700 text-white'
-                      : 'bg-gray-100 text-gray-900'
-                  }`}>
-                    <p className="whitespace-pre-wrap">{message.text}</p>
-                    
-                    {/* Tool Action Indicator */}
-                    {message.sender === 'ai' && message.toolAction && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="mt-3 pt-3 border-t border-gray-200"
-                      >
-                        <div className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-primary-50 to-purple-50 rounded-lg border border-primary-200">
-                          <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                          >
-                            <ExternalLink className="w-4 h-4 text-primary-600" />
-                          </motion.div>
-                          <span className="text-sm text-primary-700 font-medium">
-                            Đang mở tab mới...
+                  
+                  <div className="flex-1">
+                    <div className={`rounded-2xl px-4 py-3 ${
+                      message.sender === 'user'
+                        ? 'bg-gradient-to-br from-purple-600 to-purple-700 text-white'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
+                    }`}>
+                      {/* AI Provider Badge (only for AI messages) */}
+                      {message.sender === 'ai' && (
+                        <div className="flex items-center space-x-2 mb-2">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-gray-600 dark:text-gray-300 font-semibold">
+                            {aiProvider === 'groq' ? '⚡ Groq' : '✨ Gemini'}
                           </span>
                         </div>
-                      </motion.div>
-                    )}
-                    
-                    {/* Action Links */}
-                    {message.sender === 'ai' && message.actions && message.actions.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
-                        <p className="text-xs text-gray-500 font-medium mb-2">📚 Tài liệu tham khảo:</p>
-                        {message.actions.map((action, idx) => (
-                          <motion.a
-                            key={idx}
-                            href={action.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.1 }}
-                            className="flex items-center space-x-2 px-3 py-2 bg-white rounded-lg hover:bg-gray-50 transition-colors border border-gray-200 group"
-                          >
-                            <span className="text-lg">{action.icon}</span>
-                            <span className="text-sm text-gray-700 flex-1 group-hover:text-primary-600 transition-colors">
-                              {action.title}
+                      )}
+                      
+                      <p className="whitespace-pre-wrap">{
+                        typeof message.text === 'string' 
+                          ? message.text 
+                          : JSON.stringify(message.text, null, 2)
+                      }</p>
+                      
+                      {/* Tool Action Indicator */}
+                      {message.sender === 'ai' && message.toolAction && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700"
+                        >
+                          <div className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-primary-50 to-purple-50 dark:from-primary-900 dark:to-purple-900 rounded-lg border border-primary-200 dark:border-primary-700">
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                            >
+                              <ExternalLink className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                            </motion.div>
+                            <span className="text-sm text-primary-700 dark:text-primary-300 font-medium">
+                              Đang mở tab mới...
                             </span>
-                            <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-primary-600 transition-colors" />
-                          </motion.a>
-                        ))}
-                      </div>
-                    )}
-                    <div className={`flex items-center justify-between mt-1 text-xs ${message.sender === 'user' ? 'text-white/90' : 'text-gray-500'}`}>
+                          </div>
+                        </motion.div>
+                      )}
+                      
+                      {/* Action Links */}
+                      {message.sender === 'ai' && message.actions && message.actions.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2">📚 Tài liệu tham khảo:</p>
+                          {message.actions.map((action, idx) => (
+                            <motion.a
+                              key={idx}
+                              href={action.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: idx * 0.1 }}
+                              className="flex items-center space-x-2 px-3 py-2 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors border border-gray-200 dark:border-gray-600 group"
+                            >
+                              <span className="text-lg">{action.icon}</span>
+                              <span className="text-sm text-gray-700 dark:text-gray-300 flex-1 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {action.title}
+                              </span>
+                              <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors" />
+                            </motion.a>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className={`flex items-center justify-between mt-1 text-xs ${message.sender === 'user' ? 'text-white/90' : 'text-gray-500 dark:text-gray-400'}`}>
                       <span>
                         {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -527,8 +758,23 @@ const ChatPage = () => {
                         </motion.span>
                       )}
                     </div>
+                    </div> {/* Close rounded-2xl div */}
+                  </div> {/* Close flex-1 div */}
+                  
+                </div> {/* Close flex items-start div */}
+                
+                {/* Email Draft Preview - Outside message bubble */}
+                {message.sender === 'ai' && message.emailDraft && (
+                  <div className="mt-2 ml-11 mr-0 max-w-[80%]">
+                    <EmailDraftPreview
+                      draft={message.emailDraft}
+                      onSent={() => {
+                        toast.success('Email đã được gửi!');
+                        // Optionally refresh messages
+                      }}
+                    />
                   </div>
-                </div>
+                )}
               </motion.div>
             ))}
             {loading && (
@@ -556,6 +802,52 @@ const ChatPage = () => {
 
           {/* Input */}
           <div className="border-t pt-4 space-y-4">
+            {/* Mode Helper Text */}
+            <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg px-4 py-3 border border-gray-200">
+              {chatMode === 'normal' && (
+                <div className="flex items-start space-x-2">
+                  <span className="text-lg">🤖</span>
+                  <div>
+                    <p className="font-semibold text-gray-800">Normal Chat Mode</p>
+                    <p className="text-sm text-gray-600">Ask anything - AI will answer naturally</p>
+                  </div>
+                </div>
+              )}
+              {chatMode === 'google-cloud' && (
+                <div className="flex items-start space-x-2">
+                  <span className="text-lg">🌐</span>
+                  <div>
+                    <p className="font-semibold text-blue-800">Google Cloud Mode</p>
+                    <p className="text-sm text-blue-600">
+                      Try: "Dịch sang tiếng Anh: Hello" • "Phân tích cảm xúc: Amazing!" • "Phân tích ảnh: [URL]"
+                    </p>
+                  </div>
+                </div>
+              )}
+              {chatMode === 'rag' && (
+                <div className="flex items-start space-x-2">
+                  <span className="text-lg">📚</span>
+                  <div>
+                    <p className="font-semibold text-green-800">RAG Mode</p>
+                    <p className="text-sm text-green-600">
+                      Searches knowledge base for accurate answers • Great for studying!
+                    </p>
+                  </div>
+                </div>
+              )}
+              {chatMode === 'agent' && (
+                <div className="flex items-start space-x-2">
+                  <span className="text-lg">🎓</span>
+                  <div>
+                    <p className="font-semibold text-purple-800">Agent Mode</p>
+                    <p className="text-sm text-purple-600">
+                      Try: "Xem thời khóa biểu" • "Điểm của tôi" • "Gửi email cho giáo viên"
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Voice Chat Controls */}
             <div className="flex items-center justify-between">
               <VoiceChatButton

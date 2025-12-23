@@ -53,6 +53,7 @@ export const ENDPOINTS = {
   AI: {
     CHAT: '/api/chat',
     MODELS: '/api/models',
+    GROQ_MODELS: '/api/models/groq',
     GENERATE_QUIZ: '/api/ai/generate-quiz',
     SUMMARIZE: '/api/ai/summarize',
     EXPLAIN: '/api/ai/explain',

@@ -55,21 +55,21 @@ Start-Sleep -Seconds 3
 
 # Start OAuth Service
 Write-Host "[*] Starting OAuth Service (Port 8003)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend\PythonService'; Write-Host '[OAuth Service]' -ForegroundColor Green; python google_oauth_service.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend\PythonService'; Write-Host '[OAuth Service]' -ForegroundColor Green; py google_oauth_service.py"
 
 # Wait a bit
 Start-Sleep -Seconds 2
 
 # Start Google Cloud Service
 Write-Host "[*] Starting Google Cloud Service (Port 8004)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend\PythonService'; Write-Host '[Google Cloud Service]' -ForegroundColor Green; python google_cloud_service_oauth.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend\PythonService'; Write-Host '[Google Cloud Service]' -ForegroundColor Green; py google_cloud_service_oauth.py"
 
 # Wait a bit
 Start-Sleep -Seconds 2
 
 # Start FastAPI AI Service
 Write-Host "[*] Starting AI Service (Port 8000)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend\PythonService'; Write-Host '[AI Service]' -ForegroundColor Green; python main.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend\PythonService'; Write-Host '[AI Service]' -ForegroundColor Green; py main.py"
 
 # Wait a bit
 Start-Sleep -Seconds 2

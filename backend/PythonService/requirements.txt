@@ -7,10 +7,11 @@ beautifulsoup4==4.12.2
 cryptography==41.0.7
 chromadb
 sentence-transformers
+nest-asyncio
 
-# Google Cloud Services (Optional - for advanced features)
-google-cloud-vision
-google-cloud-translate
-google-cloud-speech
-google-cloud-texttospeech
-google-cloud-language
+# Document Intelligence
+pdfplumber==0.10.3
+PyPDF2==3.0.1
+python-docx==1.1.0
+pillow==10.1.0
+pytesseract==0.3.10
