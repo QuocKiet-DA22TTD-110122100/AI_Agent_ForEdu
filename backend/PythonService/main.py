@@ -985,14 +985,28 @@ async def send_email_confirmed(request: SendEmailRequest, authorization: Optiona
     This endpoint is called when user clicks "Send" button in email preview
     """
     try:
-        # Get user_id from token if not provided
+        print(f"📧 /api/email/send called")
+        print(f"📧 Authorization header: {authorization[:50] if authorization else 'None'}...")
+        print(f"📧 Request user_id: {request.user_id}")
+        
+        # Priority: use user_id from request first, then try token
         user_id = request.user_id
+        
         if not user_id and authorization and authorization.startswith("Bearer "):
             token = authorization.replace("Bearer ", "")
+            print(f"📧 Extracting user_id from token...")
             user_id = get_user_id_from_token(token)
+            print(f"📧 Got user_id from token: {user_id}")
         
+        # If still no user_id, return clear error
         if not user_id:
-            raise HTTPException(status_code=401, detail="User not authenticated")
+            print(f"❌ User not authenticated - no user_id found")
+            raise HTTPException(
+                status_code=401, 
+                detail="Không thể xác thực người dùng. Vui lòng đăng nhập lại!"
+            )
+        
+        print(f"✅ Using user_id: {user_id}")
         
         # Import Gmail service
         from gmail_service import ai_send_email

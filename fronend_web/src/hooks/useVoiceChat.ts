@@ -33,9 +33,12 @@ export const useVoiceChat = ({
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
+  const isMountedRef = useRef(true);
 
   // Check browser support
   useEffect(() => {
+    isMountedRef.current = true;
+    
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const speechSynthesis = window.speechSynthesis;
     
@@ -49,14 +52,18 @@ export const useVoiceChat = ({
       recognition.lang = language;
       
       recognition.onstart = () => {
-        setIsListening(true);
+        if (isMountedRef.current) {
+          setIsListening(true);
+        }
         console.log('🎤 Voice recognition started');
       };
       
       recognition.onresult = (event: any) => {
         const current = event.resultIndex;
         const transcriptText = event.results[current][0].transcript;
-        setTranscript(transcriptText);
+        if (isMountedRef.current) {
+          setTranscript(transcriptText);
+        }
         
         // If final result, send to parent
         if (event.results[current].isFinal) {
@@ -67,7 +74,9 @@ export const useVoiceChat = ({
       
       recognition.onerror = (event: any) => {
         console.error('❌ Speech recognition error:', event.error);
-        setIsListening(false);
+        if (isMountedRef.current) {
+          setIsListening(false);
+        }
         
         if (event.error === 'no-speech') {
           toast.error('Không nghe thấy giọng nói. Hãy thử lại!');
@@ -79,7 +88,9 @@ export const useVoiceChat = ({
       };
       
       recognition.onend = () => {
-        setIsListening(false);
+        if (isMountedRef.current) {
+          setIsListening(false);
+        }
         console.log('🛑 Voice recognition ended');
       };
       
@@ -91,6 +102,7 @@ export const useVoiceChat = ({
     }
     
     return () => {
+      isMountedRef.current = false;
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
@@ -125,38 +137,75 @@ export const useVoiceChat = ({
       return;
     }
     
-    // Cancel any ongoing speech
+    // Cancel any ongoing speech first
     synthRef.current.cancel();
     
-    // Create utterance
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language;
-    utterance.rate = 1.0; // Speed
-    utterance.pitch = 1.0; // Pitch
-    utterance.volume = 1.0; // Volume
+    // Clean text - remove markdown and special characters that may cause issues
+    const cleanText = text
+      .replace(/\*\*/g, '') // Remove bold markers
+      .replace(/\*/g, '')   // Remove italic markers
+      .replace(/#{1,6}\s/g, '') // Remove headers
+      .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+      .replace(/`/g, '')   // Remove inline code
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Convert links to text
+      .replace(/📧|📌|📄|📨|💡|✅|❌|⚠️|🎓|🌐|🤖|📚|⚡|✨/g, '') // Remove emojis
+      .trim();
     
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      console.log('🔊 Speaking started');
-    };
+    if (!cleanText) {
+      console.log('⏭️ Skipping TTS - no text after cleaning');
+      return;
+    }
     
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      console.log('🔇 Speaking ended');
-    };
-    
-    utterance.onerror = (event) => {
-      console.error('❌ Speech synthesis error:', event);
-      setIsSpeaking(false);
-    };
-    
-    synthRef.current.speak(utterance);
+    // Use setTimeout to defer speech to avoid DOM conflicts
+    setTimeout(() => {
+      try {
+        // Create utterance
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = language;
+        utterance.rate = 1.0; // Speed
+        utterance.pitch = 1.0; // Pitch
+        utterance.volume = 1.0; // Volume
+        
+        utterance.onstart = () => {
+          if (isMountedRef.current) {
+            setIsSpeaking(true);
+          }
+          console.log('🔊 Speaking started');
+        };
+        
+        utterance.onend = () => {
+          if (isMountedRef.current) {
+            setIsSpeaking(false);
+          }
+          console.log('🔇 Speaking ended');
+        };
+        
+        utterance.onerror = (event) => {
+          // Only log if not interrupted (interrupted is normal when cancelling)
+          if (event.error !== 'interrupted') {
+            console.error('❌ Speech synthesis error:', event);
+          }
+          if (isMountedRef.current) {
+            setIsSpeaking(false);
+          }
+        };
+        
+        synthRef.current?.speak(utterance);
+      } catch (error) {
+        console.warn('⚠️ Speech synthesis failed:', error);
+        if (isMountedRef.current) {
+          setIsSpeaking(false);
+        }
+      }
+    }, 100); // Small delay to let React finish rendering
   };
 
   const stopSpeaking = () => {
     if (synthRef.current) {
       synthRef.current.cancel();
-      setIsSpeaking(false);
+      if (isMountedRef.current) {
+        setIsSpeaking(false);
+      }
     }
   };
 

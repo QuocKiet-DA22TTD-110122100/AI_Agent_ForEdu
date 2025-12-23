@@ -6,10 +6,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Layout from '../components/Layout';
 import VoiceChatButton from '../components/VoiceChatButton';
 import QuotaWarningBanner from '../components/QuotaWarningBanner';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { EmailDraftPreview } from '../components/EmailDraftPreview';
 import { chatService } from '../services/chatService';
 import { springApi } from '../services/api';
 import { useVoiceChat } from '../hooks/useVoiceChat';
+import { useAuthStore } from '../store/authStore';
 import type { ChatMessage } from '../types';
 
 interface ActionLink {
@@ -60,6 +62,7 @@ interface GroqModel {
 
 const ChatPage = () => {
   const queryClient = useQueryClient();
+  const { user, token } = useAuthStore(); // Get current user from auth store
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -72,6 +75,25 @@ const ChatPage = () => {
   const [autoSpeak, setAutoSpeak] = useState(true); // Auto-read AI responses
   const [showQuotaWarning, setShowQuotaWarning] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMountedRef = useRef(true); // Track if component is mounted
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]); // Track all timeouts for cleanup
+  const scrollTimerRef = useRef<NodeJS.Timeout | null>(null); // Track scroll timer
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+      // Cancel all pending timeouts
+      timeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      timeoutsRef.current = [];
+      // Cancel scroll timer
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current);
+      }
+    };
+  }, []);
 
   // Voice Chat Hook
   const voiceChat = useVoiceChat({
@@ -87,11 +109,15 @@ const ChatPage = () => {
     queryFn: chatService.getSessions,
   });
 
-  // Load messages for current session
+  // Load messages for current session - DISABLE auto refetch to prevent DOM conflicts
   const { data: sessionMessages = [] } = useQuery({
     queryKey: ['chat-messages', currentSessionId],
     queryFn: () => currentSessionId ? chatService.getMessages(currentSessionId) : Promise.resolve([]),
     enabled: !!currentSessionId,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    staleTime: Infinity, // Never consider data stale
   });
 
   // Create new session mutation
@@ -104,17 +130,17 @@ const ChatPage = () => {
     },
   });
 
-  // Save message mutation
+  // Save message mutation - DON'T invalidate queries to avoid DOM conflict
   const saveMessageMutation = useMutation({
     mutationFn: async ({ sessionId, sender, message }: { sessionId: number; sender: string; message: string }) => {
       const response = await springApi.post(`/api/chat/sessions/${sessionId}/messages`, { sender, message });
       console.log('Message saved:', response.data);
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (data) => {
       console.log('Message saved successfully:', data);
-      // Invalidate to reload messages from database
-      queryClient.invalidateQueries({ queryKey: ['chat-messages', variables.sessionId] });
+      // DON'T invalidate queries here - it causes React DOM conflicts
+      // Messages are already in local state, no need to reload from backend
     },
     onError: (error: any) => {
       console.error('Failed to save message:', error);
@@ -130,6 +156,14 @@ const ChatPage = () => {
       createSessionMutation.mutate('New Chat Session');
     }
   }, [sessions]);
+
+  // Reset initialLoadDone when switching sessions
+  useEffect(() => {
+    if (currentSessionId && initialLoadDone !== currentSessionId) {
+      // Allow reload for new session
+      setInitialLoadDone(null);
+    }
+  }, [currentSessionId]);
 
   // Fetch Groq models when provider changes to groq
   useEffect(() => {
@@ -190,8 +224,22 @@ const ChatPage = () => {
     }
   }, [aiProvider]);
 
-  // Convert backend messages to display format
+  // Track if we've loaded initial messages for this session
+  const [initialLoadDone, setInitialLoadDone] = useState<number | null>(null);
+
+  // Convert backend messages to display format - ONLY on initial load
   useEffect(() => {
+    // Safety check: prevent loading if no session
+    if (!currentSessionId) {
+      return;
+    }
+    
+    // Only load from backend on initial session load, not on every update
+    if (initialLoadDone === currentSessionId) {
+      console.log('⏭️ Skipping message reload - already loaded for session', currentSessionId);
+      return;
+    }
+    
     console.log('📥 Raw sessionMessages from backend:', sessionMessages);
     
     if (sessionMessages.length > 0) {
@@ -217,6 +265,7 @@ const ChatPage = () => {
       })));
       
       setMessages(convertedMessages);
+      setInitialLoadDone(currentSessionId);
     } else if (currentSessionId) {
       // Show welcome message for new session
       console.log('👋 Showing welcome message for new session');
@@ -232,11 +281,29 @@ const ChatPage = () => {
   }, [sessionMessages, currentSessionId]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Simple scroll without animation to avoid conflicts
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    // Debounce scroll with longer delay
+    if (scrollTimerRef.current) {
+      clearTimeout(scrollTimerRef.current);
+    }
+    
+    scrollTimerRef.current = setTimeout(() => {
+      if (isMountedRef.current) {
+        scrollToBottom();
+      }
+    }, 300); // Increased debounce
+    
+    return () => {
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current);
+      }
+    };
   }, [messages]);
 
   // Auto-adjust RAG based on mode
@@ -259,7 +326,7 @@ const ChatPage = () => {
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [voiceChat.transcript, voiceChat.isListening, input]);
+  }, [voiceChat.transcript, voiceChat.isListening, input]); // handleSend is stable, no need to include
 
   const handleSend = async () => {
     if (!input.trim() || loading || !currentSessionId) {
@@ -280,13 +347,16 @@ const ChatPage = () => {
       status: 'sending', // Show as sending
     };
 
-    // Add user message to UI immediately with sending status
-    setMessages((prev) => {
-      console.log('Adding user message to UI with status: sending');
-      return [...prev, userMessage];
-    });
-    setInput('');
-    setLoading(true);
+    // Batch state updates to prevent multiple re-renders
+    if (isMountedRef.current) {
+      // Add user message to UI immediately with sending status
+      setMessages((prev) => {
+        console.log('Adding user message to UI with status: sending');
+        return [...prev, userMessage];
+      });
+      setInput('');
+      setLoading(true);
+    }
 
     try {
       // Save user message to database
@@ -298,12 +368,14 @@ const ChatPage = () => {
       });
       console.log('User message saved:', savedUserMsg);
 
-      // Update message status to "sent"
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempMessageId ? { ...msg, status: 'sent', id: savedUserMsg.id.toString() } : msg
-        )
-      );
+      // Update message status to "sent" - simplified
+      if (isMountedRef.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempMessageId ? { ...msg, status: 'sent', id: savedUserMsg.id.toString() } : msg
+          )
+        );
+      }
 
       // Get AI response
       console.log('Getting AI response...');
@@ -342,25 +414,41 @@ const ChatPage = () => {
       
       console.log('📧 Message created with emailDraft:', aiMessage.emailDraft);
       
-      // Add AI message to UI
-      setMessages((prev) => {
-        console.log('Adding AI message to UI');
-        return [...prev, aiMessage];
-      });
+      // Add AI message to UI - simplified without RAF to reduce complexity
+      if (isMountedRef.current) {
+        setMessages((prev) => {
+          console.log('Adding AI message to UI');
+          return [...prev, aiMessage];
+        });
+        
+        // TEMPORARILY DISABLED to prevent DOM conflicts
+        // Will re-enable after confirming core messaging works
+        /*
+        // Auto-speak AI response if enabled - SKIP for email draft
+        if (autoSpeak && voiceChat.isSupported && !aiResponse.email_draft) {
+          const speakTimeout = setTimeout(() => {
+            if (isMountedRef.current) {
+              voiceChat.speak(responseText);
+            }
+          }, 1000);
+          timeoutsRef.current.push(speakTimeout);
+        }
 
-      // Auto-speak AI response if enabled
-      if (autoSpeak && voiceChat.isSupported) {
-        setTimeout(() => {
-          voiceChat.speak(aiResponse.response);
-        }, 300);
-      }
-
-      // Auto-execute tool action if present
-      if (aiResponse.tool_action && aiResponse.tool_action.auto_execute) {
-        console.log('Auto-executing tool:', aiResponse.tool_action);
-        setTimeout(() => {
-          executeToolAction(aiResponse.tool_action);
-        }, 800); // Delay 800ms để user đọc message trước
+        // Auto-execute tool action if present
+        if (aiResponse.tool_action && aiResponse.tool_action.auto_execute) {
+          console.log('Auto-executing tool:', aiResponse.tool_action);
+          const toolTimeout = setTimeout(() => {
+            if (isMountedRef.current) {
+              try {
+                executeToolAction(aiResponse.tool_action);
+              } catch (toolError) {
+                console.error('❌ Tool execution failed:', toolError);
+              }
+            }
+          }, 1000);
+          timeoutsRef.current.push(toolTimeout);
+        }
+        */
       }
 
       // Save AI message to database (skip email draft messages)
@@ -377,7 +465,12 @@ const ChatPage = () => {
       }
 
     } catch (error: any) {
-      console.error('Error sending message:', error);
+      console.error('❌ Error sending message:', error);
+      
+      // Prevent infinite loops
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
       
       // Check if it's a quota exceeded error
       const errorMessage = error.response?.data?.detail || error.message || '';
@@ -386,11 +479,13 @@ const ChatPage = () => {
                           errorMessage.includes('exceeded');
       
       // Update message status to "error" with retry option
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempMessageId ? { ...msg, status: 'error', retryable: !isQuotaError } : msg
-        )
-      );
+      if (isMountedRef.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempMessageId ? { ...msg, status: 'error', retryable: !isQuotaError } : msg
+          )
+        );
+      }
       
       // Show appropriate error message
       if (isQuotaError) {
@@ -415,12 +510,16 @@ const ChatPage = () => {
           timestamp: new Date(),
         };
         
-        setMessages((prev) => [...prev, systemMessage]);
+        if (isMountedRef.current) {
+          setMessages((prev) => [...prev, systemMessage]);
+        }
       } else {
         toast.error('Không thể gửi tin nhắn. Nhấn để thử lại.');
       }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -437,42 +536,54 @@ const ChatPage = () => {
   };
 
   const executeToolAction = (action: ToolAction) => {
-    const { tool, query, url } = action;
-    
-    // Whitelist URLs for security
-    const ALLOWED_DOMAINS = ['youtube.com', 'google.com', 'wikipedia.org'];
     try {
-      const urlObj = new URL(url);
-      const isAllowed = ALLOWED_DOMAINS.some(domain => urlObj.hostname.includes(domain));
-      
-      if (!isAllowed) {
-        toast.error('URL không được phép!');
+      if (!action || !action.url) {
+        console.warn('Invalid action:', action);
         return;
       }
-    } catch {
-      toast.error('URL không hợp lệ!');
-      return;
+      
+      const { tool, query, url } = action;
+      
+      // Whitelist URLs for security
+      const ALLOWED_DOMAINS = ['youtube.com', 'google.com', 'wikipedia.org'];
+      try {
+        const urlObj = new URL(url);
+        const isAllowed = ALLOWED_DOMAINS.some(domain => urlObj.hostname.includes(domain));
+        
+        if (!isAllowed) {
+          toast.error('URL không được phép!');
+          return;
+        }
+      } catch (urlError) {
+        console.error('Invalid URL:', urlError);
+        toast.error('URL không hợp lệ!');
+        return;
+      }
+      
+      // Open URL in new tab
+      window.open(url, '_blank', 'noopener,noreferrer');
+      
+      // Show toast notification
+      const messages: Record<string, string> = {
+        'play_youtube': `🎬 Đang phát video: ${query}`,
+        'search_youtube': `🎥 Đã mở YouTube: ${query}`,
+        'search_google': `🔍 Đã tìm trên Google: ${query}`,
+        'open_wikipedia': `📖 Đã mở Wikipedia: ${query}`
+      };
+      
+      toast.success(messages[tool] || 'Đã mở tab mới!', {
+        duration: 4000,
+        icon: tool === 'play_youtube' ? '🎬' : '✅'
+      });
+    } catch (error) {
+      console.error('❌ Error executing tool action:', error);
+      toast.error('Không thể thực hiện hành động này');
     }
-    
-    // Open URL in new tab
-    window.open(url, '_blank', 'noopener,noreferrer');
-    
-    // Show toast notification
-    const messages: Record<string, string> = {
-      'play_youtube': `🎬 Đang phát video: ${query}`,
-      'search_youtube': `🎥 Đã mở YouTube: ${query}`,
-      'search_google': `🔍 Đã tìm trên Google: ${query}`,
-      'open_wikipedia': `📖 Đã mở Wikipedia: ${query}`
-    };
-    
-    toast.success(messages[tool] || 'Đã mở tab mới!', {
-      duration: 4000,
-      icon: tool === 'play_youtube' ? '🎬' : '✅'
-    });
   };
 
   const handleNewSession = () => {
     const title = `Chat ${new Date().toLocaleString()}`;
+    setInitialLoadDone(null); // Reset to allow loading messages for new session
     createSessionMutation.mutate(title);
   };
 
@@ -484,15 +595,16 @@ const ChatPage = () => {
   };
 
   return (
-    <Layout>
-      <div className="max-w-5xl mx-auto h-[calc(100vh-12rem)]">
-        <div className="card h-full flex flex-col">
-          {/* Quota Warning Banner */}
-          <AnimatePresence>
-            {showQuotaWarning && (
-              <QuotaWarningBanner onClose={() => setShowQuotaWarning(false)} />
-            )}
-          </AnimatePresence>
+    <ErrorBoundary>
+      <Layout>
+        <div className="max-w-5xl mx-auto h-[calc(100vh-12rem)]">
+          <div className="card h-full flex flex-col">
+            {/* Quota Warning Banner */}
+            <AnimatePresence mode="wait">
+              {showQuotaWarning && (
+                <QuotaWarningBanner onClose={() => setShowQuotaWarning(false)} />
+              )}
+            </AnimatePresence>
 
           {/* Header */}
           <div className="border-b pb-4 mb-4">
@@ -627,13 +739,16 @@ const ChatPage = () => {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+            <AnimatePresence initial={false}>
+              {messages.map((message) => (
+                <motion.div
+                  key={`${message.id}-${message.sender}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, transition: { duration: 0.1 } }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className={`flex flex-col ${message.sender === 'user' ? 'items-end' : 'items-start'}`}
+                >
                 <div className={`flex items-start space-x-3 max-w-[80%] ${message.sender === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                     message.sender === 'user'
@@ -658,11 +773,20 @@ const ChatPage = () => {
                         </div>
                       )}
                       
-                      <p className="whitespace-pre-wrap">{
-                        typeof message.text === 'string' 
-                          ? message.text 
-                          : JSON.stringify(message.text, null, 2)
-                      }</p>
+                      <div className="whitespace-pre-wrap">
+                        <span>{
+                          (() => {
+                            try {
+                              return typeof message.text === 'string' 
+                                ? message.text 
+                                : JSON.stringify(message.text, null, 2);
+                            } catch (error) {
+                              console.error('Error rendering message text:', error);
+                              return '[Lỗi hiển thị tin nhắn]';
+                            }
+                          })()
+                        }</span>
+                      </div>
                       
                       {/* Tool Action Indicator */}
                       {message.sender === 'ai' && message.toolAction && (
@@ -759,24 +883,31 @@ const ChatPage = () => {
                       )}
                     </div>
                     </div> {/* Close rounded-2xl div */}
+                    
+                    {/* Email Draft Preview - Inside flex-1 div to avoid DOM conflicts */}
+                    {message.sender === 'ai' && message.emailDraft && (
+                      <div className="mt-2">
+                        <ErrorBoundary fallback={
+                          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm text-red-600">⚠️ Không thể hiển thị email draft</p>
+                          </div>
+                        }>
+                          <EmailDraftPreview
+                            draft={message.emailDraft}
+                            userId={user?.id}
+                            onSent={() => {
+                              toast.success('Email đã được gửi!');
+                            }}
+                          />
+                        </ErrorBoundary>
+                      </div>
+                    )}
                   </div> {/* Close flex-1 div */}
                   
                 </div> {/* Close flex items-start div */}
-                
-                {/* Email Draft Preview - Outside message bubble */}
-                {message.sender === 'ai' && message.emailDraft && (
-                  <div className="mt-2 ml-11 mr-0 max-w-[80%]">
-                    <EmailDraftPreview
-                      draft={message.emailDraft}
-                      onSent={() => {
-                        toast.success('Email đã được gửi!');
-                        // Optionally refresh messages
-                      }}
-                    />
-                  </div>
-                )}
               </motion.div>
-            ))}
+              ))}
+            </AnimatePresence>
             {loading && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -898,6 +1029,7 @@ const ChatPage = () => {
         </div>
       </div>
     </Layout>
+    </ErrorBoundary>
   );
 };
 
