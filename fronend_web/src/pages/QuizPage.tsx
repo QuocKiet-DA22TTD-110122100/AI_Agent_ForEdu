@@ -25,7 +25,7 @@ const QuizPage = () => {
   };
 
   const handleSubmit = async () => {
-    if (Object.keys(answers).length !== data?.questions.length) {
+    if (Object.keys(answers).length !== data?.questions?.length) {
       toast.error('Please answer all questions');
       return;
     }
@@ -115,12 +115,15 @@ const QuizPage = () => {
         </button>
 
         <div className="card mb-6">
-          <h1 className="text-3xl font-bold mb-2">{data?.quiz.title}</h1>
+          <h1 className="text-3xl font-bold mb-2">{data?.title || 'Quiz'}</h1>
+          {data?.description && (
+            <p className="text-gray-600 mb-3">{data.description}</p>
+          )}
           <p className="text-gray-600">
-            Difficulty: <span className="font-medium capitalize">{data?.quiz.difficulty}</span>
+            Difficulty: <span className="font-medium capitalize">{data?.difficulty?.toLowerCase()}</span>
           </p>
           <p className="text-gray-600">
-            Questions: {data?.questions.length}
+            Questions: {data?.questions?.length || 0}
           </p>
         </div>
 
@@ -172,7 +175,7 @@ const QuizPage = () => {
         <div className="mt-8 flex justify-end">
           <button
             onClick={handleSubmit}
-            disabled={Object.keys(answers).length !== data?.questions.length}
+            disabled={Object.keys(answers).length !== (data?.questions?.length || 0)}
             className="btn-primary text-lg px-8 py-4"
           >
             Submit Quiz

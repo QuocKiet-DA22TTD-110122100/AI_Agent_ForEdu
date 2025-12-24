@@ -58,6 +58,9 @@ public class QuizService {
         quiz.setLessonId(lesson.getId());
         quiz.setCreatedBy(user.getId());
         quiz.setDifficulty(request.getDifficulty());
+        // Giáo viên tạo -> công khai, Sinh viên tạo -> riêng tư
+        quiz.setIsPublic(user.getRole() == Role.TEACHER);
+        quiz.setTitle("Quiz tự động (" + request.getDifficulty() + ")");
         
         Quiz savedQuiz = quizRepository.save(quiz);
         
@@ -82,9 +85,17 @@ public class QuizService {
     }
     
     @Transactional(readOnly = true)
-    public QuizResponse getQuiz(Long quizId) {
+    public QuizResponse getQuiz(Long quizId, User user) {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy quiz"));
+        
+        // Kiểm tra quyền truy cập
+        if (user.getRole() != Role.TEACHER) {
+            // Sinh viên chỉ xem quiz công khai hoặc quiz tự tạo
+            if (!quiz.getIsPublic() && !quiz.getCreatedBy().equals(user.getId())) {
+                throw new RuntimeException("Bạn không có quyền xem quiz này");
+            }
+        }
         
         List<QuizQuestion> questions = questionRepository.findByQuizId(quizId);
         return toQuizResponse(quiz, questions);
@@ -94,6 +105,14 @@ public class QuizService {
     public QuizResultResponse submitQuiz(Long quizId, SubmitQuizRequest request, User user) {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy quiz"));
+        
+        // Kiểm tra quyền truy cập
+        if (user.getRole() != Role.TEACHER) {
+            // Sinh viên chỉ làm quiz công khai hoặc quiz tự tạo
+            if (!quiz.getIsPublic() && !quiz.getCreatedBy().equals(user.getId())) {
+                throw new RuntimeException("Bạn không có quyền làm quiz này");
+            }
+        }
         
         List<QuizQuestion> questions = questionRepository.findByQuizId(quizId);
         
@@ -136,6 +155,8 @@ public class QuizService {
         response.setId(quiz.getId());
         response.setCourseId(quiz.getCourseId());
         response.setLessonId(quiz.getLessonId());
+        response.setTitle(quiz.getTitle());
+        response.setDescription(quiz.getDescription());
         response.setDifficulty(quiz.getDifficulty());
         response.setCreatedBy(quiz.getCreatedBy());
         response.setCreatedAt(quiz.getCreatedAt());
@@ -157,4 +178,93 @@ public class QuizService {
         response.setQuestions(questionResponses);
         return response;
     }
+    
+    @Transactional
+    public QuizResponse createQuiz(CreateQuizRequest request, User user) {
+        // Kiểm tra bài học tồn tại
+        Lesson lesson = lessonRepository.findById(request.getLessonId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy bài học"));
+        
+        // Tạo quiz
+        Quiz quiz = new Quiz();
+        quiz.setCourseId(lesson.getCourseId());
+        quiz.setLessonId(lesson.getId());
+        quiz.setTitle(request.getTitle());
+        quiz.setDescription(request.getDescription());
+        quiz.setCreatedBy(user.getId());
+        quiz.setDifficulty(request.getDifficulty() != null ? request.getDifficulty() : QuizDifficulty.MEDIUM);
+        // Giáo viên tạo -> công khai, Sinh viên tạo -> riêng tư
+        quiz.setIsPublic(user.getRole() == Role.TEACHER);
+        
+        Quiz savedQuiz = quizRepository.save(quiz);
+        
+        // Tạo các câu hỏi
+        List<QuizQuestion> quizQuestions = new ArrayList<>();
+        for (CreateQuizRequest.QuestionRequest qReq : request.getQuestions()) {
+            QuizQuestion question = new QuizQuestion();
+            question.setQuizId(savedQuiz.getId());
+            question.setQuestion(qReq.getQuestion());
+            question.setOptionA(qReq.getOptionA());
+            question.setOptionB(qReq.getOptionB());
+            question.setOptionC(qReq.getOptionC());
+            question.setOptionD(qReq.getOptionD());
+            question.setCorrectAnswer(qReq.getCorrectAnswer().toUpperCase());
+            question.setExplanation(qReq.getExplanation());
+            
+            quizQuestions.add(questionRepository.save(question));
+        }
+        
+        return toQuizResponse(savedQuiz, quizQuestions);
+    }
+    
+    @Transactional(readOnly = true)
+    public List<QuizListResponse> getQuizzesByLesson(Long lessonId, User user) {
+        List<Quiz> quizzes = quizRepository.findByLessonIdOrderByCreatedAtDesc(lessonId);
+        
+        // Lọc quiz theo quyền:
+        // - Giáo viên: xem tất cả
+        // - Sinh viên: chỉ xem quiz công khai + quiz riêng của mình
+        return quizzes.stream()
+                .filter(quiz -> {
+                    if (user.getRole() == Role.TEACHER) {
+                        return true; // Giáo viên xem tất cả
+                    }
+                    // Sinh viên chỉ xem quiz công khai hoặc quiz tự tạo
+                    return quiz.getIsPublic() || quiz.getCreatedBy().equals(user.getId());
+                })
+                .map(quiz -> {
+            QuizListResponse response = new QuizListResponse();
+            response.setId(quiz.getId());
+            response.setLessonId(quiz.getLessonId());
+            response.setTitle(quiz.getTitle());
+            response.setDescription(quiz.getDescription());
+            response.setDifficulty(quiz.getDifficulty());
+            response.setCreatedAt(quiz.getCreatedAt());
+            response.setIsPublic(quiz.getIsPublic());
+            
+            // Đếm số câu hỏi
+            int questionCount = questionRepository.countByQuizId(quiz.getId());
+            response.setTotalQuestions(questionCount);
+            
+            // Lấy tên người tạo
+            if (quiz.getCreator() != null) {
+                response.setCreatorName(quiz.getCreator().getFullName());
+            }
+            
+            // Kiểm tra sinh viên đã làm chưa
+            if (user != null && user.getRole() == Role.STUDENT) {
+                Optional<QuizResult> lastResult = resultRepository
+                        .findTopByQuizIdAndUserIdOrderByCreatedAtDesc(quiz.getId(), user.getId());
+                if (lastResult.isPresent()) {
+                    response.setIsCompleted(true);
+                    response.setLastScore(lastResult.get().getScore());
+                } else {
+                    response.setIsCompleted(false);
+                }
+            }
+            
+            return response;
+        }).collect(Collectors.toList());
+    }
 }
+

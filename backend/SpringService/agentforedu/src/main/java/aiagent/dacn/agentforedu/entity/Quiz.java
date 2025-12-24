@@ -25,6 +25,12 @@ public class Quiz {
     @Column(name = "lesson_id")
     private Long lessonId;
     
+    @Column(length = 255)
+    private String title;
+    
+    @Column(columnDefinition = "TEXT")
+    private String description;
+    
     @Column(name = "created_by", nullable = false)
     private Long createdBy;
     
@@ -34,6 +40,9 @@ public class Quiz {
     
     @Enumerated(EnumType.STRING)
     private QuizDifficulty difficulty;
+    
+    @Column(name = "is_public", nullable = false)
+    private Boolean isPublic = false; // true = công khai cho sinh viên, false = riêng tư
     
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

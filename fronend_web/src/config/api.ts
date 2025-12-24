@@ -20,6 +20,7 @@ export const ENDPOINTS = {
     CREATE: '/api/courses',
     UPDATE: (id: number) => `/api/courses/${id}`,
     DELETE: (id: number) => `/api/courses/${id}`,
+    MY_COURSES: '/api/courses/my-courses',
   },
   // Lessons
   LESSONS: {
@@ -46,6 +47,8 @@ export const ENDPOINTS = {
   // Quiz
   QUIZ: {
     GENERATE: '/api/quiz/generate',
+    CREATE: '/api/quiz/create',
+    BY_LESSON: (lessonId: number) => `/api/quiz/lesson/${lessonId}`,
     DETAIL: (id: number) => `/api/quiz/${id}`,
     SUBMIT: (id: number) => `/api/quiz/${id}/submit`,
   },
@@ -57,5 +60,18 @@ export const ENDPOINTS = {
     GENERATE_QUIZ: '/api/ai/generate-quiz',
     SUMMARIZE: '/api/ai/summarize',
     EXPLAIN: '/api/ai/explain',
+  },
+  // Progress
+  PROGRESS: {
+    UPDATE_LESSON: '/api/progress/lesson',
+    GET_LESSON: (lessonId: number) => `/api/progress/lesson/${lessonId}`,
+    GET_COURSE: (courseId: number) => `/api/progress/course/${courseId}`,
+    MY_COURSES: '/api/progress/my-courses',
+  },
+  // Teacher Management
+  TEACHER: {
+    COURSE_STUDENTS: (courseId: number) => `/api/teacher/courses/${courseId}/students`,
+    REMOVE_STUDENT: (courseId: number, studentId: number) => `/api/teacher/courses/${courseId}/students/${studentId}`,
+    MY_COURSES: '/api/teacher/my-courses',
   },
 };

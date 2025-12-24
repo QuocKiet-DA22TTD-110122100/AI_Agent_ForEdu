@@ -81,4 +81,10 @@ public class CourseController {
     public ResponseEntity<List<CourseResponse>> getMyEnrolledCourses(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(courseService.getMyEnrolledCourses(user));
     }
+
+    @GetMapping("/my-courses")
+    @Operation(summary = "Lấy khóa học của tôi - Sinh viên: khóa đã đăng ký, Giáo viên: khóa đã tạo")
+    public ResponseEntity<List<CourseResponse>> getMyCourses(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(courseService.getMyCourses(user));
+    }
 }

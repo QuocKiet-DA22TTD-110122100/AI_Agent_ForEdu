@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { BookOpen, Search, Plus, Lock, Globe, Users, Filter, Grid, List, Star, Clock, TrendingUp, Sparkles } from 'lucide-react';
+import { BookOpen, Search, Plus, Lock, Globe, Users, Filter, Grid, List, Star, Clock, TrendingUp, Sparkles, GraduationCap, Edit, Trash2, PlayCircle } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Layout from '../components/Layout';
 import { courseService } from '../services/courseService';
@@ -10,16 +10,25 @@ import { useAuthStore } from '../store/authStore';
 
 const CoursesPage = () => {
   const user = useAuthStore((state) => state.user);
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [enrollingCourseId, setEnrollingCourseId] = useState<number | null>(null);
   const [passwordInput, setPasswordInput] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
+
+  const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
 
   const { data: courses = [], isLoading, refetch } = useQuery({
     queryKey: ['courses'],
     queryFn: courseService.getCourses,
+  });
+
+  const { data: myCourses = [], isLoading: myCoursesLoading, refetch: refetchMyCourses } = useQuery({
+    queryKey: ['my-courses'],
+    queryFn: courseService.getMyCourses,
   });
 
   const handleEnroll = async (course: any) => {
@@ -55,6 +64,7 @@ const CoursesPage = () => {
       setPasswordInput('');
       setSelectedCourse(null);
       refetch();
+      refetchMyCourses();
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Mật khẩu không đúng!');
     } finally {
@@ -62,7 +72,27 @@ const CoursesPage = () => {
     }
   };
 
+  const handleDeleteCourse = async (courseId: number) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa khóa học này?')) {
+      return;
+    }
+
+    try {
+      await courseService.deleteCourse(courseId);
+      toast.success('Đã xóa khóa học');
+      refetch();
+      refetchMyCourses();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Không thể xóa khóa học');
+    }
+  };
+
   const filteredCourses = courses.filter((course) =>
+    course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    course.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const displayCourses = activeTab === 'all' ? filteredCourses : myCourses.filter((course) =>
     course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     course.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -101,6 +131,43 @@ const CoursesPage = () => {
                 </Link>
               )}
             </div>
+          </div>
+        </motion.div>
+
+        {/* Tabs */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mb-6"
+        >
+          <div className="flex gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-200 w-fit">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'all'
+                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4" />
+                Tất cả khóa học
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('my')}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'my'
+                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-4 h-4" />
+                {isTeacher ? 'Khóa học của tôi' : 'Khóa đã đăng ký'}
+              </div>
+            </button>
           </div>
         </motion.div>
 
@@ -151,7 +218,7 @@ const CoursesPage = () => {
           <div className="flex items-center gap-6 mt-6 text-sm text-gray-600">
             <div className="flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-blue-500" />
-              <span><strong>{filteredCourses.length}</strong> courses found</span>
+              <span><strong>{displayCourses.length}</strong> {activeTab === 'all' ? 'courses found' : isTeacher ? 'khóa học của tôi' : 'khóa đã đăng ký'}</span>
             </div>
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-green-500" />
@@ -160,8 +227,8 @@ const CoursesPage = () => {
           </div>
         </motion.div>
 
-        {/* Courses Grid/List */}
-        {isLoading ? (
+        {/* Loading State */}
+        {(isLoading || (activeTab === 'my' && myCoursesLoading)) ? (
           <div className={viewMode === 'grid' ? 'grid md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 animate-pulse">
@@ -172,9 +239,9 @@ const CoursesPage = () => {
               </div>
             ))}
           </div>
-        ) : filteredCourses.length > 0 ? (
+        ) : displayCourses.length > 0 ? (
           <div className={viewMode === 'grid' ? 'grid md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
-            {filteredCourses.map((course, index) => (
+            {displayCourses.map((course, index) => (
               viewMode === 'grid' ? (
                 <motion.div
                   key={course.id}
@@ -233,7 +300,42 @@ const CoursesPage = () => {
                     </div>
 
                     {/* Action Button */}
-                    {user?.role === 'STUDENT' && !course.isEnrolled && (
+                    {activeTab === 'my' && isTeacher ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => navigate(`/courses/${course.id}`)}
+                          className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-semibold transition-all hover:shadow-lg"
+                        >
+                          <PlayCircle className="w-4 h-4" />
+                          Quản lý
+                        </button>
+                        <button
+                          onClick={() => navigate(`/courses/${course.id}/students`)}
+                          className="px-4 py-3 bg-green-50 border-2 border-green-200 text-green-700 rounded-xl hover:bg-green-100 transition-all"
+                          title="Xem sinh viên"
+                        >
+                          <Users className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCourse(course.id);
+                          }}
+                          className="px-4 py-3 bg-red-50 border-2 border-red-200 text-red-700 rounded-xl hover:bg-red-100 transition-all"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    ) : activeTab === 'my' ? (
+                      <Link
+                        to={`/courses/${course.id}`}
+                        className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl font-semibold text-center transition-all hover:shadow-lg flex items-center justify-center gap-2"
+                      >
+                        <PlayCircle className="w-4 h-4" />
+                        Học ngay
+                      </Link>
+                    ) : user?.role === 'STUDENT' && !course.isEnrolled ? (
                       <button
                         onClick={() => handleEnroll(course)}
                         disabled={enrollingCourseId === course.id}
@@ -248,15 +350,14 @@ const CoursesPage = () => {
                           </>
                         )}
                       </button>
-                    )}
-                    {course.isEnrolled && (
+                    ) : course.isEnrolled ? (
                       <Link
                         to={`/courses/${course.id}`}
                         className="w-full py-3 px-4 bg-green-50 border-2 border-green-200 text-green-700 rounded-xl font-semibold text-center hover:bg-green-100 transition-all"
                       >
                         Continue Learning →
                       </Link>
-                    )}
+                    ) : null}
                   </div>
                 </motion.div>
               ) : (
@@ -316,7 +417,42 @@ const CoursesPage = () => {
                           </div>
                         </div>
 
-                        {user?.role === 'STUDENT' && !course.isEnrolled && (
+                        {activeTab === 'my' && isTeacher ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => navigate(`/courses/${course.id}`)}
+                              className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg font-semibold transition-all hover:shadow-lg flex items-center gap-2"
+                            >
+                              <PlayCircle className="w-4 h-4" />
+                              Quản lý
+                            </button>
+                            <button
+                              onClick={() => navigate(`/courses/${course.id}/students`)}
+                              className="px-4 py-2 bg-green-50 border-2 border-green-200 text-green-700 rounded-lg hover:bg-green-100 transition-all"
+                              title="Xem sinh viên"
+                            >
+                              <Users className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteCourse(course.id);
+                              }}
+                              className="px-4 py-2 bg-red-50 border-2 border-red-200 text-red-700 rounded-lg hover:bg-red-100 transition-all"
+                              title="Xóa"
+                            >
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ) : activeTab === 'my' ? (
+                          <Link
+                            to={`/courses/${course.id}`}
+                            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg font-semibold transition-all hover:shadow-lg flex items-center gap-2"
+                          >
+                            <PlayCircle className="w-4 h-4" />
+                            Học ngay
+                          </Link>
+                        ) : user?.role === 'STUDENT' && !course.isEnrolled ? (
                           <button
                             onClick={() => handleEnroll(course)}
                             disabled={enrollingCourseId === course.id}
@@ -331,15 +467,14 @@ const CoursesPage = () => {
                               </>
                             )}
                           </button>
-                        )}
-                        {course.isEnrolled && (
+                        ) : course.isEnrolled ? (
                           <Link
                             to={`/courses/${course.id}`}
                             className="px-6 py-2 bg-green-50 border-2 border-green-200 text-green-700 rounded-lg font-semibold hover:bg-green-100 transition-all"
                           >
                             Continue →
                           </Link>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -356,14 +491,39 @@ const CoursesPage = () => {
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
               <BookOpen className="w-12 h-12 text-gray-400" />
             </div>
-            <h3 className="text-2xl font-bold mb-3">No courses found</h3>
-            <p className="text-gray-600 mb-6">Try adjusting your search or explore all courses</p>
-            <button
-              onClick={() => setSearchQuery('')}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
-            >
-              Clear Search
-            </button>
+            <h3 className="text-2xl font-bold mb-3">
+              {activeTab === 'my' 
+                ? (isTeacher ? 'Chưa có khóa học nào' : 'Bạn chưa đăng ký khóa học nào')
+                : 'No courses found'}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {activeTab === 'my'
+                ? (isTeacher ? 'Hãy tạo khóa học đầu tiên của bạn!' : 'Hãy khám phá và đăng ký các khóa học thú vị!')
+                : 'Try adjusting your search or explore all courses'}
+            </p>
+            {activeTab === 'my' && isTeacher ? (
+              <Link
+                to="/courses/create"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+              >
+                <Plus className="w-5 h-5" />
+                Tạo khóa học
+              </Link>
+            ) : activeTab === 'my' ? (
+              <button
+                onClick={() => setActiveTab('all')}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+              >
+                Khám phá khóa học
+              </button>
+            ) : (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+              >
+                Clear Search
+              </button>
+            )}
           </motion.div>
         )}
       </div>

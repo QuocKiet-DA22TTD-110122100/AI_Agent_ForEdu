@@ -8,6 +8,7 @@ import aiagent.dacn.agentforedu.entity.CourseEnrollment;
 import aiagent.dacn.agentforedu.entity.User;
 import aiagent.dacn.agentforedu.repository.CourseEnrollmentRepository;
 import aiagent.dacn.agentforedu.repository.CourseRepository;
+import aiagent.dacn.agentforedu.repository.LessonRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class CourseService {
     
     private final CourseRepository courseRepository;
     private final CourseEnrollmentRepository enrollmentRepository;
+    private final LessonRepository lessonRepository;
     
     @Transactional(readOnly = true)
     public List<CourseResponse> getAllCourses(User currentUser) {
@@ -115,6 +117,20 @@ public class CourseService {
                 .filter(response -> response != null)
                 .collect(Collectors.toList());
     }
+
+    @Transactional(readOnly = true)
+    public List<CourseResponse> getMyCourses(User user) {
+        // If teacher/admin: return courses created by user
+        if ("TEACHER".equals(user.getRole().name()) || "ADMIN".equals(user.getRole().name())) {
+            return courseRepository.findAll().stream()
+                    .filter(course -> course.getCreatedBy().equals(user.getId()))
+                    .map(course -> toResponse(course, user))
+                    .collect(Collectors.toList());
+        }
+        
+        // If student: return enrolled courses
+        return getMyEnrolledCourses(user);
+    }
     
     private CourseResponse toResponse(Course course, User currentUser) {
         CourseResponse response = new CourseResponse();
@@ -134,11 +150,19 @@ public class CourseService {
         if (currentUser != null) {
             boolean isEnrolled = enrollmentRepository.existsByUserIdAndCourseId(currentUser.getId(), course.getId());
             response.setIsEnrolled(isEnrolled);
+            
+            // Check if current user is the creator
+            boolean isCreator = course.getCreatedBy().equals(currentUser.getId());
+            response.setIsCreator(isCreator);
         }
         
         // Get enrollment count
         long enrollmentCount = enrollmentRepository.countByCourseId(course.getId());
         response.setEnrollmentCount(enrollmentCount);
+        
+        // Get total lessons count
+        int totalLessons = (int) lessonRepository.findByCourseIdOrderByOrderIndexAsc(course.getId()).size();
+        response.setTotalLessons(totalLessons);
         
         return response;
     }

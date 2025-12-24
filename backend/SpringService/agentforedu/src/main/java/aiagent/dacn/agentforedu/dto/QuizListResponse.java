@@ -1,24 +1,21 @@
 package aiagent.dacn.agentforedu.dto;
 
 import aiagent.dacn.agentforedu.entity.QuizDifficulty;
-import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class QuizResponse {
+public class QuizListResponse {
     private Long id;
-    private Long courseId;
     private Long lessonId;
     private String title;
     private String description;
     private QuizDifficulty difficulty;
-    private Long createdBy;
+    private Integer totalQuestions;
+    private String creatorName;
     private LocalDateTime createdAt;
-    private List<QuizQuestionResponse> questions;
+    private Boolean isPublic; // Quiz công khai hay riêng tư
+    private Boolean isCompleted; // Sinh viên đã làm chưa
+    private Double lastScore; // Điểm lần làm gần nhất
 }

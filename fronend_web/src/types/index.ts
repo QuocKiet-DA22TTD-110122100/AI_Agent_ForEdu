@@ -36,6 +36,8 @@ export interface Course {
   isPublic: boolean;
   isEnrolled?: boolean;
   enrollmentCount?: number;
+  isCreator?: boolean;
+  totalLessons?: number;
   imageUrl?: string;
   createdAt: string;
   updatedAt: string;
@@ -102,4 +104,61 @@ export interface QuizResult {
   score: number;
   totalQuestions: number;
   completedAt: string;
+}
+
+// Progress Types
+export interface LessonProgress {
+  id: number;
+  userId: number;
+  lessonId: number;
+  courseId: number;
+  lessonTitle?: string;
+  isCompleted: boolean;
+  completedAt?: string;
+  timeSpent: number; // seconds
+  progressPercentage: number; // 0-100
+  lastAccessedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseProgress {
+  id: number;
+  userId: number;
+  courseId: number;
+  courseTitle?: string;
+  totalLessons: number;
+  completedLessons: number;
+  progressPercentage: number;
+  totalTimeSpent: number; // seconds
+  lastAccessedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  lessonProgressList?: LessonProgress[];
+}
+
+// Student Management Types
+export interface EnrolledStudent {
+  userId: number;
+  username: string;
+  fullName?: string;
+  email: string;
+  avatarUrl?: string;
+  enrolledAt: string;
+  progressPercentage?: number;
+  completedLessons?: number;
+  totalLessons?: number;
+  totalTimeSpent?: number;
+  lastAccessedAt?: string;
+}
+
+export interface CourseStudentManagement {
+  courseId: number;
+  courseTitle: string;
+  courseDescription: string;
+  createdBy: number;
+  creatorName?: string;
+  totalStudents: number;
+  totalLessons: number;
+  students: EnrolledStudent[];
 }

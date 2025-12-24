@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { BookOpen, FileText, Play, ArrowLeft, Plus, CheckCircle, Clock, Award, Users, GraduationCap, Target, Sparkles } from 'lucide-react';
 import Layout from '../components/Layout';
 import { courseService } from '../services/courseService';
+import { progressService } from '../services/progressService';
 import { useAuthStore } from '../store/authStore';
 
 const CourseDetailPage = () => {
@@ -26,6 +27,35 @@ const CourseDetailPage = () => {
     queryFn: () => courseService.getMaterialsByCourse(courseId),
   });
 
+  // Fetch progress data
+  const { data: courseProgress } = useQuery({
+    queryKey: ['courseProgress', courseId],
+    queryFn: () => progressService.getCourseProgress(courseId),
+    enabled: !!user && user.role === 'STUDENT',
+  });
+
+  // Fetch lesson progress for all lessons
+  const lessonProgressQueries = useQuery({
+    queryKey: ['lessonProgressBatch', courseId, lessons.map(l => l.id)],
+    queryFn: async () => {
+      if (!user || user.role !== 'STUDENT' || lessons.length === 0) return {};
+      const progressMap: Record<number, any> = {};
+      await Promise.all(
+        lessons.map(async (lesson) => {
+          try {
+            const progress = await progressService.getLessonProgress(lesson.id);
+            progressMap[lesson.id] = progress;
+          } catch (err) {
+            // Lesson not started yet
+            progressMap[lesson.id] = null;
+          }
+        })
+      );
+      return progressMap;
+    },
+    enabled: !!user && user.role === 'STUDENT' && lessons.length > 0,
+  });
+
   if (courseLoading || lessonsLoading) {
     return (
       <Layout>
@@ -44,7 +74,8 @@ const CourseDetailPage = () => {
     );
   }
 
-  const progress = Math.floor(Math.random() * 100); // Mock progress
+  const progress = courseProgress?.progressPercentage || 0;
+  const lessonProgressMap = lessonProgressQueries.data || {};
 
   return (
     <Layout>
@@ -144,6 +175,25 @@ const CourseDetailPage = () => {
               />
             </div>
           </div>
+
+          {/* Teacher Actions */}
+          {course?.isCreator && (
+            <div className="px-8 md:px-12 py-4 bg-gradient-to-r from-green-50 to-blue-50 border-t border-gray-100">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-green-700">
+                  <GraduationCap className="w-5 h-5" />
+                  <span className="font-semibold">Bạn là giáo viên của khóa học này</span>
+                </div>
+                <Link 
+                  to={`/courses/${courseId}/students`}
+                  className="ml-auto flex items-center gap-2 px-4 py-2 bg-white border border-green-200 text-green-700 rounded-lg hover:bg-green-50 transition-colors"
+                >
+                  <Users className="w-4 h-4" />
+                  Quản lý sinh viên
+                </Link>
+              </div>
+            </div>
+          )}
         </motion.div>
 
         {/* Lessons Section */}
@@ -187,7 +237,7 @@ const CourseDetailPage = () => {
                       <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-500 text-white rounded-xl flex items-center justify-center font-bold text-2xl shadow-lg group-hover:scale-110 transition-transform">
                         {index + 1}
                       </div>
-                      {index < 3 && (
+                      {lessonProgressMap[lesson.id]?.isCompleted && (
                         <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
                           <CheckCircle className="w-4 h-4 text-white" />
                         </div>
@@ -202,14 +252,26 @@ const CourseDetailPage = () => {
                         {lesson.content.substring(0, 120)}...
                       </p>
                       <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span className="flex items-center gap-1.5">
-                          <Clock className="w-4 h-4" />
-                          <span>15 min</span>
-                        </span>
-                        {index < 3 && (
+                        {lessonProgressMap[lesson.id] && (
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="w-4 h-4" />
+                            <span>{Math.floor((lessonProgressMap[lesson.id].timeSpent || 0) / 60)} phút</span>
+                          </span>
+                        )}
+                        {lessonProgressMap[lesson.id]?.isCompleted ? (
                           <span className="flex items-center gap-1.5 text-green-600 font-medium">
                             <CheckCircle className="w-4 h-4" />
-                            <span>Completed</span>
+                            <span>Đã hoàn thành</span>
+                          </span>
+                        ) : lessonProgressMap[lesson.id] ? (
+                          <span className="flex items-center gap-1.5 text-blue-600 font-medium">
+                            <Target className="w-4 h-4" />
+                            <span>{lessonProgressMap[lesson.id].progressPercentage}%</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5 text-gray-400">
+                            <Play className="w-4 h-4" />
+                            <span>Chưa bắt đầu</span>
                           </span>
                         )}
                       </div>

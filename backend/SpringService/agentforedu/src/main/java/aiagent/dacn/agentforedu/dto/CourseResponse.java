@@ -18,6 +18,8 @@ public class CourseResponse {
     private Boolean isPublic;
     private Boolean isEnrolled; // Whether current user is enrolled
     private Long enrollmentCount; // Number of students enrolled
+    private Boolean isCreator; // Whether current user is the course creator
+    private Integer totalLessons; // Total number of lessons in course
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

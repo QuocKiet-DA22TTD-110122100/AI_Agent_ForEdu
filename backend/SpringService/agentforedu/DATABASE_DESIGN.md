@@ -220,21 +220,44 @@ Hệ thống sử dụng **MySQL** để lưu trữ dữ liệu quan hệ và **
 
 ---
 
-### 1️⃣4️⃣ BẢNG `user_school_credentials` - Thông tin trường học
+### 1️⃣5️⃣ BẢNG `lesson_progress` - Tiến độ học bài học
 
 | Cột | Kiểu | Mô tả |
 |-----|------|-------|
-| id | BIGINT PK AUTO | ID credential |
-| user_id | BIGINT FK users(id) UNIQUE | Người dùng |
-| encrypted_username | VARCHAR(500) | Username đã mã hóa |
-| encrypted_password | TEXT | Password đã mã hóa |
-| school_url | VARCHAR(500) | URL trang trường |
-| last_synced_at | DATETIME | Lần đồng bộ cuối |
-| is_active | BOOLEAN | Đang hoạt động |
+| id | BIGINT PK AUTO | ID tiến độ |
+| user_id | BIGINT FK users(id) | Sinh viên |
+| lesson_id | BIGINT FK lessons(id) | Bài học |
+| course_id | BIGINT FK courses(id) | Khóa học |
+| is_completed | BOOLEAN | Đã hoàn thành bài học |
+| completed_at | DATETIME | Thời gian hoàn thành |
+| time_spent | INT | Thời gian học (giây) |
+| progress_percentage | INT | Phần trăm hoàn thành (0-100) |
+| last_accessed_at | DATETIME | Lần truy cập cuối |
 | created_at | DATETIME | Thời gian tạo |
 | updated_at | DATETIME | Thời gian cập nhật |
 
-**Indexes:** user_id (UNIQUE), is_active, last_synced_at
+**Indexes:** user_id, lesson_id, course_id, (user_id, course_id), is_completed  
+**Unique Constraint:** (user_id, lesson_id) - Mỗi user chỉ có 1 progress cho mỗi lesson
+
+---
+
+### 1️⃣6️⃣ BẢNG `course_progress` - Tiến độ học khóa học
+
+| Cột | Kiểu | Mô tả |
+|-----|------|-------|
+| id | BIGINT PK AUTO | ID tiến độ khóa học |
+| user_id | BIGINT FK users(id) | Sinh viên |
+| course_id | BIGINT FK courses(id) | Khóa học |
+| total_lessons | INT | Tổng số bài học |
+| completed_lessons | INT | Số bài học đã hoàn thành |
+| progress_percentage | DECIMAL(5,2) | Phần trăm hoàn thành (0.00-100.00) |
+| total_time_spent | INT | Tổng thời gian học (giây) |
+| last_accessed_at | DATETIME | Lần truy cập cuối |
+| created_at | DATETIME | Thời gian tạo |
+| updated_at | DATETIME | Thời gian cập nhật |
+
+**Indexes:** user_id, course_id, (user_id, course_id)  
+**Unique Constraint:** (user_id, course_id) - Mỗi user chỉ có 1 progress cho mỗi course
 
 ---
 
@@ -250,10 +273,16 @@ users (1) ----< (N) system_logs
 users (1) ----< (N) course_enrollments
 users (1) ----< (N) user_schedules
 users (1) ---- (1) user_school_credentials
+users (1) ----< (N) lesson_progress
+users (1) ----< (N) course_progress
 
 courses (1) ----< (N) lessons
 courses (1) ----< (N) materials
 courses (1) ----< (N) course_enrollments
+courses (1) ----< (N) lesson_progress
+courses (1) ----< (N) course_progress
+
+lessons (1) ----< (N) lesson_progress
 
 chat_sessions (1) ----< (N) chat_messages
 
@@ -261,6 +290,8 @@ quizzes (1) ----< (N) quiz_questions
 quizzes (1) ----< (N) quiz_results
 
 users (N) ←→ (N) courses  [qua course_enrollments]
+users (N) ←→ (N) lessons  [qua lesson_progress]
+users (N) ←→ (N) courses  [qua course_progress]
 ```
 
 ---
@@ -327,6 +358,10 @@ File `database_schema.sql` đã bao gồm 3 user mẫu:
 8. **user_school_credentials** lưu thông tin đăng nhập đã mã hóa AES-256
 9. **courses.is_public** = FALSE yêu cầu access_password để truy cập
 10. **user_school_credentials.user_id** có UNIQUE constraint - mỗi user chỉ 1 credential
+11. **lesson_progress** theo dõi tiến độ học từng bài học chi tiết
+12. **course_progress** tổng hợp tiến độ học toàn khóa học
+13. **lesson_progress.is_completed** = TRUE khi progress_percentage = 100
+14. **course_progress.progress_percentage** được tính từ lesson_progress
 
 ---
 

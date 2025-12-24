@@ -12,6 +12,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/quiz")
 @RequiredArgsConstructor
@@ -29,10 +31,28 @@ public class QuizController {
         return ResponseEntity.ok(quizService.generateQuiz(request, user));
     }
     
+    @PostMapping("/create")
+    @Operation(summary = "Tạo quiz thủ công (Teacher)")
+    public ResponseEntity<QuizResponse> createQuiz(
+            @Valid @RequestBody CreateQuizRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(quizService.createQuiz(request, user));
+    }
+    
+    @GetMapping("/lesson/{lessonId}")
+    @Operation(summary = "Lấy danh sách quiz của một bài học")
+    public ResponseEntity<List<QuizListResponse>> getQuizzesByLesson(
+            @PathVariable Long lessonId,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(quizService.getQuizzesByLesson(lessonId, user));
+    }
+    
     @GetMapping("/{id}")
     @Operation(summary = "Lấy thông tin quiz và câu hỏi")
-    public ResponseEntity<QuizResponse> getQuiz(@PathVariable Long id) {
-        return ResponseEntity.ok(quizService.getQuiz(id));
+    public ResponseEntity<QuizResponse> getQuiz(
+            @PathVariable Long id,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(quizService.getQuiz(id, user));
     }
     
     @PostMapping("/{id}/submit")

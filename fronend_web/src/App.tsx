@@ -15,6 +15,7 @@ import CreateLessonPage from './pages/CreateLessonPage';
 import LessonPage from './pages/LessonPage';
 import ChatPage from './pages/ChatPage';
 import QuizPage from './pages/QuizPage';
+import CreateQuizPage from './pages/CreateQuizPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import SchedulePage from './pages/SchedulePage';
@@ -23,6 +24,9 @@ import DeckDetailPage from './pages/DeckDetailPage';
 import FlashcardStudyPage from './pages/FlashcardStudyPage';
 import GoogleCalendarPage from './pages/GoogleCalendarPage';
 import DocumentIntelligencePage from './pages/DocumentIntelligencePage';
+import CourseStudentsPage from './pages/CourseStudentsPage';
+import MyProgressPage from './pages/MyProgressPage';
+import MyCoursesPage from './pages/MyCoursesPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +58,7 @@ function App() {
           <Route path="/courses/:id" element={<ProtectedRoute><CourseDetailPage /></ProtectedRoute>} />
           <Route path="/courses/:courseId/lessons/create" element={<ProtectedRoute><CreateLessonPage /></ProtectedRoute>} />
           <Route path="/lessons/:id" element={<ProtectedRoute><LessonPage /></ProtectedRoute>} />
+          <Route path="/lessons/:lessonId/quiz/create" element={<ProtectedRoute><CreateQuizPage /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/quiz/:id" element={<ProtectedRoute><QuizPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
@@ -64,6 +69,8 @@ function App() {
           <Route path="/flashcards/deck/:deckId" element={<ProtectedRoute><DeckDetailPage /></ProtectedRoute>} />
           <Route path="/flashcards/study/:deckId" element={<ProtectedRoute><FlashcardStudyPage /></ProtectedRoute>} />
           <Route path="/document-intelligence" element={<ProtectedRoute><DocumentIntelligencePage /></ProtectedRoute>} />
+          <Route path="/courses/:courseId/students" element={<ProtectedRoute><CourseStudentsPage /></ProtectedRoute>} />
+          <Route path="/my-progress" element={<ProtectedRoute><MyProgressPage /></ProtectedRoute>} />
         </Routes>
       </Router>
       <Toaster position="top-right" />

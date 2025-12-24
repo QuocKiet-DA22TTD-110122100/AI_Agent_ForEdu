@@ -40,4 +40,7 @@ public class QuizQuestion {
     
     @Column(name = "correct_answer", length = 1)
     private String correctAnswer; // 'A', 'B', 'C', 'D'
+    
+    @Column(columnDefinition = "TEXT")
+    private String explanation; // Giải thích đáp án đúng
 }

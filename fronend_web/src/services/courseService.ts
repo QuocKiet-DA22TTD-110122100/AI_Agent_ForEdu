@@ -85,4 +85,9 @@ export const courseService = {
     const response = await springApi.get('/api/courses/my-enrollments');
     return response.data;
   },
+
+  getMyCourses: async (): Promise<Course[]> => {
+    const response = await springApi.get(ENDPOINTS.COURSES.MY_COURSES);
+    return response.data;
+  },
 };
