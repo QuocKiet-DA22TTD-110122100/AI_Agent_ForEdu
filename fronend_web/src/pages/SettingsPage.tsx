@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { School, Key, RefreshCw, Save, Trash2, CheckCircle, AlertCircle, Plus, Edit2, Eye, EyeOff, Globe, Film, Users, Briefcase, DollarSign, Heart, Cloud } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { School, Key, RefreshCw, Save, Trash2, CheckCircle, AlertCircle, Plus, Edit2, Eye, EyeOff, Globe, Film, Users, Briefcase, DollarSign, Heart, Cloud, Settings as SettingsIcon, Sparkles } from 'lucide-react';
 import Layout from '../components/Layout';
 import { springApi } from '../services/api';
 import toast from 'react-hot-toast';
@@ -214,21 +215,47 @@ const SettingsPage = () => {
   return (
     <Layout>
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Cài Đặt</h1>
-          <p className="text-gray-600">
-            Quản lý tài khoản và tích hợp dịch vụ
-          </p>
-        </div>
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl p-8 md:p-12 mb-8 overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24" />
+          
+          <div className="relative z-10 text-white">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center border-2 border-white/30">
+                <SettingsIcon className="w-7 h-7" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                <span className="text-sm font-semibold opacity-90">System Configuration</span>
+              </div>
+            </div>
+            <h1 className="text-3xl md:text-5xl font-bold mb-3">Settings</h1>
+            <p className="text-lg md:text-xl opacity-90">
+              Manage your account and service integrations
+            </p>
+          </div>
+        </motion.div>
 
         {/* Google Cloud Integration Section */}
-        <div className="card mb-8">
-          <div className="flex items-center space-x-3 mb-4">
-            <Cloud className="w-6 h-6 text-blue-600" />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100 mb-8"
+        >
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center">
+              <Cloud className="w-7 h-7 text-blue-600" />
+            </div>
             <div>
               <h2 className="text-2xl font-bold">Google Cloud Integration</h2>
-              <p className="text-gray-600 text-sm">
-                Kết nối tài khoản Google để sử dụng các API miễn phí trong chatbox
+              <p className="text-gray-600">
+                Connect your Google account to use free APIs in chat
               </p>
             </div>
           </div>
@@ -255,24 +282,31 @@ const SettingsPage = () => {
               <li>• <strong>Text-to-Speech:</strong> "Đọc cho tôi: Hello world"</li>
             </ul>
           </div>
-        </div>
+        </motion.div>
 
         {/* Credentials Management Section */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-2xl font-bold">Quản Lý Credentials</h2>
-            <p className="text-gray-600 mt-1">
-              Lưu trữ và quản lý tài khoản cho các dịch vụ khác nhau
-            </p>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mb-8"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold">Quản Lý Credentials</h2>
+              <p className="text-gray-600 mt-1">
+                Lưu trữ và quản lý tài khoản cho các dịch vụ khác nhau
+              </p>
+            </div>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="btn-primary flex items-center space-x-2"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Thêm Credential</span>
+            </button>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="btn-primary flex items-center space-x-2"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Thêm Credential</span>
-          </button>
-        </div>
+        </motion.div>
 
         {/* Category Filter */}
         <div className="flex flex-wrap gap-2 mb-6">

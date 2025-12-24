@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, FileText, Play, ArrowLeft, Plus } from 'lucide-react';
+import { BookOpen, FileText, Play, ArrowLeft, Plus, CheckCircle, Clock, Award, Users, GraduationCap, Target, Sparkles } from 'lucide-react';
 import Layout from '../components/Layout';
 import { courseService } from '../services/courseService';
 import { useAuthStore } from '../store/authStore';
@@ -29,13 +29,13 @@ const CourseDetailPage = () => {
   if (courseLoading || lessonsLoading) {
     return (
       <Layout>
-        <div className="max-w-5xl mx-auto">
-          <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
-            <div className="h-64 bg-gray-200 rounded mb-8"></div>
+        <div className="max-w-6xl mx-auto px-4 py-8">
+          <div className="animate-pulse space-y-6">
+            <div className="h-10 bg-gray-200 rounded w-1/4"></div>
+            <div className="h-64 bg-gray-200 rounded-2xl"></div>
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-24 bg-gray-200 rounded"></div>
+                <div key={i} className="h-32 bg-gray-200 rounded-2xl"></div>
               ))}
             </div>
           </div>
@@ -44,53 +44,131 @@ const CourseDetailPage = () => {
     );
   }
 
+  const progress = Math.floor(Math.random() * 100); // Mock progress
+
   return (
     <Layout>
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Back Button */}
-        <Link to="/courses" className="inline-flex items-center text-primary-600 hover:text-primary-700 mb-6">
-          <ArrowLeft className="w-5 h-5 mr-2" />
-          Back to Courses
-        </Link>
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="mb-6"
+        >
+          <Link 
+            to="/courses" 
+            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium hover:gap-3 transition-all"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Back to Courses
+          </Link>
+        </motion.div>
 
-        {/* Course Header */}
+        {/* Course Header Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="card mb-8"
+          className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden mb-8"
         >
-          <div className="flex items-start space-x-6">
-            <div className="w-32 h-32 bg-gradient-to-br from-primary-500 to-purple-500 rounded-xl flex items-center justify-center text-white flex-shrink-0">
-              <BookOpen className="w-16 h-16" />
-            </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold mb-3">{course?.title}</h1>
-              <p className="text-gray-600 mb-4">{course?.description}</p>
-              <div className="flex items-center space-x-6 text-sm text-gray-500">
-                <span>Teacher: {course?.teacherName || 'Unknown'}</span>
-                <span>•</span>
-                <span>{lessons.length} Lessons</span>
-                <span>•</span>
-                <span>{materials.length} Materials</span>
+          <div className="relative bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600 p-8 md:p-12">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32" />
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24" />
+            
+            <div className="relative z-10 flex flex-col md:flex-row items-start gap-8">
+              <div className="w-32 h-32 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 flex-shrink-0 shadow-2xl">
+                <BookOpen className="w-16 h-16 text-white" />
               </div>
+              
+              <div className="flex-1 text-white">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles className="w-5 h-5" />
+                  <span className="text-sm font-semibold opacity-90">Course Overview</span>
+                </div>
+                <h1 className="text-3xl md:text-4xl font-bold mb-4">{course?.title}</h1>
+                <p className="text-lg opacity-90 mb-6 leading-relaxed">{course?.description}</p>
+                
+                <div className="flex flex-wrap gap-6 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                      <GraduationCap className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="opacity-75 text-xs">Instructor</p>
+                      <p className="font-semibold">{course?.teacherName || 'Unknown'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                      <Play className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="opacity-75 text-xs">Lessons</p>
+                      <p className="font-semibold">{lessons.length}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="opacity-75 text-xs">Materials</p>
+                      <p className="font-semibold">{materials.length}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="opacity-75 text-xs">Students</p>
+                      <p className="font-semibold">{course?.enrollmentCount || 0}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="px-8 md:px-12 py-6 bg-gradient-to-r from-blue-50 to-purple-50 border-t border-gray-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-gray-700">Your Progress</span>
+              <span className="text-sm font-bold text-blue-600">{progress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 1, delay: 0.3 }}
+                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+              />
             </div>
           </div>
         </motion.div>
 
-        {/* Lessons */}
+        {/* Lessons Section */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold">Course Lessons</h2>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="flex items-center justify-between mb-6"
+          >
+            <div>
+              <h2 className="text-2xl md:text-3xl font-bold mb-2">Course Lessons</h2>
+              <p className="text-gray-600">Follow the structured curriculum to master the concepts</p>
+            </div>
             {(user?.role === 'TEACHER' || user?.role === 'ADMIN') && (
               <Link 
                 to={`/courses/${courseId}/lessons/create`}
-                className="btn-primary flex items-center space-x-2"
+                className="flex items-center gap-2 px-4 py-2 md:px-6 md:py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
               >
                 <Plus className="w-5 h-5" />
-                <span>Add Lesson</span>
+                <span className="hidden md:inline">Add Lesson</span>
               </Link>
             )}
-          </div>
+          </motion.div>
+
           {lessons.length > 0 ? (
             <div className="space-y-4">
               {lessons.map((lesson, index) => (
@@ -98,62 +176,122 @@ const CourseDetailPage = () => {
                   key={lesson.id}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  whileHover={{ x: 10 }}
+                  transition={{ delay: 0.3 + index * 0.1 }}
+                  whileHover={{ scale: 1.02, x: 8 }}
                 >
-                  <Link to={`/lessons/${lesson.id}`} className="card flex items-center space-x-4 hover:shadow-xl transition-shadow">
-                    <div className="w-12 h-12 bg-primary-100 text-primary-600 rounded-lg flex items-center justify-center font-bold">
-                      {index + 1}
+                  <Link 
+                    to={`/lessons/${lesson.id}`} 
+                    className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl hover:border-blue-200 transition-all flex items-center gap-6 group"
+                  >
+                    <div className="relative flex-shrink-0">
+                      <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-500 text-white rounded-xl flex items-center justify-center font-bold text-2xl shadow-lg group-hover:scale-110 transition-transform">
+                        {index + 1}
+                      </div>
+                      {index < 3 && (
+                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center border-2 border-white">
+                          <CheckCircle className="w-4 h-4 text-white" />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-lg mb-1">{lesson.title}</h3>
-                      <p className="text-gray-600 text-sm line-clamp-2">{lesson.content.substring(0, 100)}...</p>
+                    
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xl font-bold mb-2 group-hover:text-blue-600 transition-colors">
+                        {lesson.title}
+                      </h3>
+                      <p className="text-gray-600 line-clamp-2 mb-3">
+                        {lesson.content.substring(0, 120)}...
+                      </p>
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-4 h-4" />
+                          <span>15 min</span>
+                        </span>
+                        {index < 3 && (
+                          <span className="flex items-center gap-1.5 text-green-600 font-medium">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>Completed</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <Play className="w-6 h-6 text-primary-600" />
+                    
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all">
+                        <Play className="w-6 h-6" />
+                      </div>
+                    </div>
                   </Link>
                 </motion.div>
               ))}
             </div>
           ) : (
-            <div className="card text-center py-12">
-              <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600">No lessons available yet</p>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3 }}
+              className="bg-white rounded-2xl p-12 text-center shadow-lg border border-gray-100"
+            >
+              <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <BookOpen className="w-12 h-12 text-gray-400" />
+              </div>
+              <h3 className="text-2xl font-bold mb-3">No Lessons Yet</h3>
+              <p className="text-gray-600 mb-6">This course doesn't have any lessons yet. Check back soon!</p>
+              {(user?.role === 'TEACHER' || user?.role === 'ADMIN') && (
+                <Link 
+                  to={`/courses/${courseId}/lessons/create`}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+                >
+                  <Plus className="w-5 h-5" />
+                  Create First Lesson
+                </Link>
+              )}
+            </motion.div>
           )}
         </div>
 
-        {/* Materials */}
+        {/* Materials Section */}
         {materials.length > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold mb-6">Course Materials</h2>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+          >
+            <div className="mb-6">
+              <h2 className="text-2xl md:text-3xl font-bold mb-2">Course Materials</h2>
+              <p className="text-gray-600">Additional resources to enhance your learning</p>
+            </div>
+            
             <div className="grid md:grid-cols-2 gap-4">
               {materials.map((material, index) => (
                 <motion.div
                   key={material.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="card flex items-center space-x-4 hover:shadow-xl transition-shadow"
+                  transition={{ delay: 0.5 + index * 0.1 }}
+                  whileHover={{ scale: 1.03 }}
+                  className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl hover:border-purple-200 transition-all"
                 >
-                  <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
-                    <FileText className="w-6 h-6" />
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <FileText className="w-7 h-7" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-lg mb-1">{material.title}</h3>
+                      <p className="text-sm text-gray-500 uppercase">{material.fileType}</p>
+                    </div>
+                    <a
+                      href={material.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-purple-100 text-purple-600 rounded-lg font-medium text-sm hover:bg-purple-600 hover:text-white transition-all"
+                    >
+                      View
+                    </a>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold">{material.title}</h3>
-                    <p className="text-sm text-gray-500">{material.fileType}</p>
-                  </div>
-                  <a
-                    href={material.fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary-600 hover:text-primary-700 font-medium text-sm"
-                  >
-                    View
-                  </a>
                 </motion.div>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
       </div>
     </Layout>

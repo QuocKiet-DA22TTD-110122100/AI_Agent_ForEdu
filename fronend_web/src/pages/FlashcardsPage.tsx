@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { flashcardService } from '../services/flashcardService';
 import type { FlashcardDeck } from '../types/flashcard';
 import DeckCard from '../components/flashcards/DeckCard';
-import { Plus, BookOpen } from 'lucide-react';
+import { Plus, BookOpen, Sparkles, X } from 'lucide-react';
+import Layout from '../components/Layout';
 
 const FlashcardsPage: React.FC = () => {
   const [decks, setDecks] = useState<FlashcardDeck[]>([]);
@@ -68,153 +70,211 @@ const FlashcardsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-400">Đang tải...</p>
+      <Layout>
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 animate-pulse">
+                <div className="h-32 bg-gray-200 rounded-xl mb-4"></div>
+                <div className="h-6 bg-gray-200 rounded mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </Layout>
     );
   }
 
   return (
-    <div className="container mx-auto p-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold dark:text-white flex items-center gap-3">
-            <BookOpen size={32} className="text-blue-500" />
-            Bộ Thẻ Flashcard
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Học thông minh với phương pháp Spaced Repetition
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-lg hover:shadow-xl"
+    <Layout>
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl p-8 md:p-12 mb-8 overflow-hidden"
         >
-          <Plus size={20} />
-          <span className="font-medium">Tạo bộ thẻ mới</span>
-        </button>
-      </div>
-
-      {/* Decks Grid */}
-      {decks.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {decks.map((deck) => (
-            <DeckCard key={deck.id} deck={deck} onUpdate={loadDecks} onDelete={handleDeleteDeck} />
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-16">
-          <div className="text-6xl mb-4">🎴</div>
-          <h2 className="text-2xl font-bold mb-2 dark:text-white">Chưa có bộ thẻ nào</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Tạo bộ thẻ đầu tiên để bắt đầu học!
-          </p>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-          >
-            <Plus size={20} />
-            Tạo bộ thẻ đầu tiên
-          </button>
-        </div>
-      )}
-
-      {/* Create Deck Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-dark-800 rounded-xl p-6 max-w-md w-full">
-            <h2 className="text-2xl font-bold mb-4 dark:text-white">Tạo bộ thẻ mới</h2>
-            <form onSubmit={handleCreateDeck}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 dark:text-gray-300">
-                  Tên bộ thẻ *
-                </label>
-                <input
-                  type="text"
-                  value={newDeckName}
-                  onChange={(e) => setNewDeckName(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-dark-700 dark:text-white"
-                  placeholder="VD: Toán Cao Cấp"
-                  required
-                />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24" />
+          
+          <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div className="text-white">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-6 h-6" />
+                <span className="text-sm font-semibold opacity-90">Smart Learning</span>
               </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 dark:text-gray-300">
-                  Mô tả (tùy chọn)
-                </label>
-                <textarea
-                  value={newDeckDescription}
-                  onChange={(e) => setNewDeckDescription(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-dark-700 dark:text-white"
-                  placeholder="Mô tả về bộ thẻ này..."
-                  rows={3}
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 dark:text-gray-300">
-                  Biểu tượng
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  {icons.map((icon) => (
-                    <button
-                      key={icon}
-                      type="button"
-                      onClick={() => setNewDeckIcon(icon)}
-                      className={`text-2xl w-12 h-12 rounded-lg border-2 ${
-                        newDeckIcon === icon
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                          : 'border-gray-200 dark:border-gray-600'
-                      }`}
-                    >
-                      {icon}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-sm font-medium mb-2 dark:text-gray-300">Màu sắc</label>
-                <div className="flex gap-2">
-                  {colors.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setNewDeckColor(color)}
-                      className={`w-10 h-10 rounded-lg border-2 ${
-                        newDeckColor === color ? 'border-gray-800 dark:border-white' : 'border-transparent'
-                      }`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 dark:text-white"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                >
-                  Tạo bộ thẻ
-                </button>
-              </div>
-            </form>
+              <h1 className="text-3xl md:text-5xl font-bold mb-3 flex items-center gap-3">
+                <BookOpen className="w-10 h-10 md:w-12 md:h-12" />
+                Flashcard Decks
+              </h1>
+              <p className="text-lg md:text-xl opacity-90">
+                Master concepts with spaced repetition learning
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-white text-purple-600 rounded-xl font-semibold hover:shadow-xl transition-all"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Create New Deck</span>
+            </button>
           </div>
-        </div>
-      )}
-    </div>
+        </motion.div>
+
+        {/* Decks Grid */}
+        {decks.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {decks.map((deck, index) => (
+              <motion.div
+                key={deck.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <DeckCard deck={deck} onUpdate={loadDecks} onDelete={handleDeleteDeck} />
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl p-12 text-center shadow-lg border border-gray-100"
+          >
+            <div className="text-6xl mb-6">🎴</div>
+            <h2 className="text-2xl font-bold mb-3">No Decks Yet</h2>
+            <p className="text-gray-600 mb-6 max-w-md mx-auto">
+              Create your first flashcard deck to start your learning journey!
+            </p>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+            >
+              <Plus className="w-5 h-5" />
+              Create First Deck
+            </button>
+          </motion.div>
+        )}
+
+        {/* Create Deck Modal */}
+        {showCreateModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <Plus className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <h2 className="text-2xl font-bold">Create New Deck</h2>
+                </div>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="w-10 h-10 hover:bg-gray-100 rounded-lg flex items-center justify-center transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateDeck} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Deck Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={newDeckName}
+                    onChange={(e) => setNewDeckName(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
+                    placeholder="e.g. Advanced Calculus"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Description (optional)
+                  </label>
+                  <textarea
+                    value={newDeckDescription}
+                    onChange={(e) => setNewDeckDescription(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all resize-none"
+                    placeholder="What's this deck about?"
+                    rows={3}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Choose Icon
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    {icons.map((icon) => (
+                      <button
+                        key={icon}
+                        type="button"
+                        onClick={() => setNewDeckIcon(icon)}
+                        className={`text-2xl w-14 h-14 rounded-xl border-2 transition-all ${
+                          newDeckIcon === icon
+                            ? 'border-blue-500 bg-blue-50 scale-110'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Choose Color
+                  </label>
+                  <div className="flex gap-3 flex-wrap">
+                    {colors.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setNewDeckColor(color)}
+                        className={`w-12 h-12 rounded-xl transition-all ${
+                          newDeckColor === color 
+                            ? 'ring-4 ring-offset-2 scale-110' 
+                            : 'hover:scale-105'
+                        }`}
+                        style={{ 
+                          backgroundColor: color,
+                          ringColor: color
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="flex-1 px-6 py-3 border-2 border-gray-200 rounded-xl hover:bg-gray-50 font-semibold transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-lg transition-all"
+                  >
+                    Create Deck
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </div>
+    </Layout>
   );
 };
 
