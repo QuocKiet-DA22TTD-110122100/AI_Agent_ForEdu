@@ -9,6 +9,11 @@ chromadb
 sentence-transformers
 nest-asyncio
 
+# LangChain - AI Agent Framework
+langchain>=0.1.0
+langchain-google-genai>=0.0.6
+langchain-community>=0.0.20
+
 # Document Intelligence
 pdfplumber==0.10.3
 PyPDF2==3.0.1

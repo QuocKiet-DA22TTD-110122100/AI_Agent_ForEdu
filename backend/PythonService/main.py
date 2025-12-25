@@ -4,9 +4,14 @@ Tất cả trong 1 file - Gemini 2.5 Flash + Vector Database
 """
 import sys
 import io
-# Fix Unicode encoding for Windows console
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+import os
+
+# Fix Unicode encoding for Windows console - MUST BE FIRST!
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    # Also set console code page to UTF-8
+    os.system('chcp 65001 >nul 2>&1')
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,6 +58,14 @@ try:
 except ImportError:
     DOCUMENT_INTELLIGENCE_AVAILABLE = False
     print("⚠️  Document Intelligence not available.")
+
+# LangChain Agent
+try:
+    from langchain_agent_simple import create_simple_langchain_agent, SimpleLangChainAgent
+    LANGCHAIN_AGENT_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AGENT_AVAILABLE = False
+    print("⚠️  LangChain Agent not available. Install: pip install langchain langchain-google-genai")
 
 # Image analysis tools for non-vision models (Groq)
 # Using OCR.space free API (25,000 requests/month)
@@ -244,6 +257,23 @@ if GOOGLE_CLOUD_AGENT_AVAILABLE:
 else:
     google_cloud_agent = None
     print("⚠️  Google Cloud Agent not initialized")
+
+# Initialize LangChain Agent
+langchain_agent = None
+if LANGCHAIN_AGENT_AVAILABLE and GEMINI_API_KEY:
+    try:
+        langchain_agent = create_simple_langchain_agent(
+            gemini_api_key=GEMINI_API_KEY
+        )
+        if langchain_agent:
+            print("✅ LangChain Agent initialized")
+        else:
+            print("⚠️  LangChain Agent initialization failed")
+    except Exception as e:
+        print(f"⚠️  LangChain Agent error: {e}")
+        langchain_agent = None
+else:
+    print("⚠️  LangChain Agent not initialized")
 
 # Initialize Image Analysis models (lazy loading)
 # No longer using EasyOCR or BLIP - using pytesseract instead
@@ -2289,6 +2319,79 @@ async def get_document_capabilities():
     return capabilities
 
 # ============================================================================
+# LANGCHAIN AGENT ENDPOINTS
+# ============================================================================
+
+class LangChainChatRequest(BaseModel):
+    """Request model for LangChain agent chat"""
+    message: str
+    user_id: Optional[int] = None
+    reset_memory: bool = False
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "message": "Xin chào!",
+                "user_id": 1,
+                "reset_memory": False
+            }
+        }
+    )
+
+class LangChainChatResponse(BaseModel):
+    """Response model for LangChain agent"""
+    success: bool
+    response: str
+    agent_type: str = "langchain_simple"
+    error: Optional[str] = None
+
+@app.post("/api/chat/langchain", response_model=LangChainChatResponse, tags=["LangChain Agent"])
+async def chat_with_langchain_agent(
+    request: LangChainChatRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Chat với LangChain AI Agent"""
+    
+    if not LANGCHAIN_AGENT_AVAILABLE or not langchain_agent:
+        raise HTTPException(status_code=503, detail="LangChain Agent not available")
+    
+    try:
+        user_id = request.user_id
+        if not user_id and authorization and authorization.startswith("Bearer "):
+            token = authorization.replace("Bearer ", "")
+            user_id = get_user_id_from_token(token)
+        
+        if request.reset_memory:
+            langchain_agent.reset_memory()
+        
+        result = langchain_agent.chat(message=request.message, user_id=user_id)
+        return LangChainChatResponse(**result)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post("/api/chat/langchain/reset", tags=["LangChain Agent"])
+async def reset_langchain_memory():
+    """Reset memory"""
+    if not LANGCHAIN_AGENT_AVAILABLE or not langchain_agent:
+        raise HTTPException(status_code=503, detail="Not available")
+    
+    langchain_agent.reset_memory()
+    return {"success": True, "message": "Memory reset"}
+
+@app.get("/api/chat/langchain/status", tags=["LangChain Agent"])
+async def get_langchain_status():
+    """Check status"""
+    if not LANGCHAIN_AGENT_AVAILABLE or not langchain_agent:
+        return {"available": False}
+    
+    return {
+        "available": True,
+        "memory_enabled": True,
+        "llm_model": "gemini-2.0-flash-exp"
+    }
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -2312,4 +2415,3 @@ if __name__ == "__main__":
         reload=False,
         log_level="info"
     )
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

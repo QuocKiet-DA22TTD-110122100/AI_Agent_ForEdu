@@ -13,7 +13,7 @@ import CourseDetailPage from './pages/CourseDetailPage';
 import CreateCoursePage from './pages/CreateCoursePage';
 import CreateLessonPage from './pages/CreateLessonPage';
 import LessonPage from './pages/LessonPage';
-import ChatPage from './pages/ChatPage';
+import ChatPage from './pages/ChatPageSimple';
 import QuizPage from './pages/QuizPage';
 import CreateQuizPage from './pages/CreateQuizPage';
 import ProfilePage from './pages/ProfilePage';
