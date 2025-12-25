@@ -32,19 +32,28 @@ export const chatService = {
     return response.data.response;
   },
 
-  sendMessageWithActions: async (message: string, useRag: boolean = false, aiProvider: string = 'gemini', groqModel?: string): Promise<any> => {
+  sendMessageWithActions: async (
+    message: string,
+    useRag: boolean = false,
+    aiProvider: string = 'gemini',
+    model?: string,
+    imageBase64?: string,
+    imageMimeType?: string
+  ): Promise<any> => {
     const response = await fastApi.post(ENDPOINTS.AI.CHAT, {
       message,
       use_rag: useRag,
       ai_provider: aiProvider,
-      model: aiProvider === 'groq' && groqModel ? groqModel : undefined,
+      model: model,
+      image_base64: imageBase64,
+      image_mime_type: imageMimeType,
     });
     return response.data;
   },
 
-  getModels: async (): Promise<string[]> => {
+  getModels: async (): Promise<any> => {
     const response = await fastApi.get(ENDPOINTS.AI.MODELS);
-    return response.data.models;
+    return response.data;
   },
 
   getGroqModels: async (): Promise<any> => {

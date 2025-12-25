@@ -2,6 +2,12 @@
 FastAPI AI Chat Service with RAG (Retrieval-Augmented Generation)
 Tất cả trong 1 file - Gemini 2.5 Flash + Vector Database
 """
+import sys
+import io
+# Fix Unicode encoding for Windows console
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
@@ -47,6 +53,12 @@ try:
 except ImportError:
     DOCUMENT_INTELLIGENCE_AVAILABLE = False
     print("⚠️  Document Intelligence not available.")
+
+# Image analysis tools for non-vision models (Groq)
+# Using OCR.space free API (25,000 requests/month)
+IMAGE_OCR_AVAILABLE = True  # Always available via API
+IMAGE_CAPTION_AVAILABLE = False
+print("✅ OCR.space API available for Groq image reading")
 
 # ============================================================================
 # VECTOR DATABASE CLASS
@@ -233,6 +245,130 @@ else:
     google_cloud_agent = None
     print("⚠️  Google Cloud Agent not initialized")
 
+# Initialize Image Analysis models (lazy loading)
+# No longer using EasyOCR or BLIP - using pytesseract instead
+
+def extract_image_content(image_base64: str, image_mime_type: str) -> Dict[str, str]:
+    """
+    Extract text from image using OCR.space API
+    Also provides basic image description for non-text images
+    Returns: {
+        "description": "Basic image info",
+        "text_content": "Extracted text from image",
+        "success": True/False
+    }
+    """
+    try:
+        import base64
+        from PIL import Image
+        import io
+        
+        # Decode image
+        image_data = base64.b64decode(image_base64)
+        image = Image.open(io.BytesIO(image_data))
+        
+        # Get image info
+        width, height = image.size
+        img_format = image.format or "Unknown"
+        mode = image.mode  # RGB, RGBA, L (grayscale), etc.
+        
+        result = {
+            "description": f"Ảnh {img_format}, kích thước {width}x{height} pixels, mode: {mode}",
+            "text_content": "",
+            "success": False
+        }
+        
+        # Use OCR.space free API with Vietnamese support
+        try:
+            print("🔍 Using OCR.space API for text extraction...")
+            import requests
+            
+            ocr_url = "https://api.ocr.space/parse/image"
+            
+            # Try Vietnamese first, then English
+            for lang in ['vie', 'eng']:
+                print(f"   Trying language: {lang}")
+                payload = {
+                    'base64Image': f'data:{image_mime_type};base64,{image_base64}',
+                    'language': lang,
+                    'isOverlayRequired': False,
+                    'detectOrientation': True,
+                    'scale': True,
+                    'OCREngine': 2  # Engine 2 for better accuracy
+                }
+                
+                response = requests.post(ocr_url, data=payload, timeout=30)
+                ocr_result = response.json()
+                
+                # Check for processing error
+                is_error = ocr_result.get('IsErroredOnProcessing', False)
+                if is_error:
+                    error_msg = ocr_result.get('ErrorMessage', 'Unknown error')
+                    # ErrorMessage can be string or list
+                    if isinstance(error_msg, list):
+                        error_msg = error_msg[0] if error_msg else 'Unknown error'
+                    elif not isinstance(error_msg, str):
+                        error_msg = str(error_msg)
+                    print(f"   ⚠️ OCR error ({lang}): {error_msg}")
+                    continue
+                
+                # Extract text from all parsed results
+                text_parts = []
+                parsed_results = ocr_result.get('ParsedResults', [])
+                
+                # Ensure parsed_results is a list
+                if not isinstance(parsed_results, list):
+                    print(f"   ⚠️ ParsedResults is not a list: {type(parsed_results)}")
+                    continue
+                
+                for parsed_result in parsed_results:
+                    # Ensure parsed_result is a dict
+                    if not isinstance(parsed_result, dict):
+                        continue
+                    text = parsed_result.get('ParsedText', '').strip()
+                    if text:
+                        text_parts.append(text)
+                
+                full_text = '\n'.join(text_parts)
+                
+                if full_text and len(full_text) > 5:  # At least some meaningful text
+                    result["text_content"] = full_text
+                    result["success"] = True
+                    print(f"✅ OCR extracted {len(full_text)} characters ({lang})")
+                    break  # Found text, stop trying other languages
+            
+            # If no text found, provide helpful context
+            if not result["success"] or not result["text_content"]:
+                result["text_content"] = f"""[Không tìm thấy text trong ảnh]
+
+Thông tin ảnh:
+- Định dạng: {img_format}
+- Kích thước: {width}x{height} pixels
+- Chế độ màu: {mode}
+
+Lưu ý: Groq không thể phân tích nội dung hình ảnh (chỉ đọc được text).
+Nếu bạn cần phân tích ảnh chi tiết, vui lòng chuyển sang Gemini."""
+                result["success"] = True  # Still return success so we can respond
+                print(f"ℹ️ No text found in image, returning image info")
+                
+        except requests.exceptions.Timeout:
+            print(f"⚠️ OCR timeout")
+            result["text_content"] = "[OCR timeout - vui lòng thử lại]"
+        except Exception as e:
+            print(f"⚠️ OCR error: {e}")
+            result["text_content"] = f"[OCR error: {str(e)[:100]}]"
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Image extraction error: {e}")
+        return {
+            "description": "Error processing image",
+            "text_content": f"[Error: {str(e)[:100]}]",
+            "success": False,
+            "error": str(e)
+        }
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -280,6 +416,8 @@ class ChatRequest(BaseModel):
     model: str = "gemini-flash-latest"  # Use latest flash model (1,500 requests/day)
     ai_provider: str = "gemini"  # "gemini" or "groq"
     use_rag: bool = True
+    image_base64: Optional[str] = None  # Base64 encoded image for vision analysis
+    image_mime_type: Optional[str] = None  # e.g., "image/jpeg", "image/png"
     
     model_config = ConfigDict(
         json_schema_extra={
@@ -287,7 +425,9 @@ class ChatRequest(BaseModel):
                 "message": "Giải thích về AI là gì?",
                 "model": "gemini-2.5-flash",
                 "ai_provider": "gemini",
-                "use_rag": True
+                "use_rag": True,
+                "image_base64": None,
+                "image_mime_type": None
             }
         }
     )
@@ -684,8 +824,20 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
         
         print(f"{'='*60}\n")
         
-        # GOOGLE CLOUD AGENT - Check intents FIRST
-        if GOOGLE_CLOUD_AGENT_AVAILABLE and google_cloud_agent:
+        # ===== DECISION TREE: IMAGE vs AGENTS vs TOOLS =====
+        # Priority: Image > Google Cloud Agent > Agent Features > Tools > Normal chat
+        
+        has_image_input = bool(request.image_base64 and request.image_mime_type)
+        
+        if has_image_input:
+            # ===== HIGHEST PRIORITY: IMAGE VISION =====
+            print(f"🖼️ IMAGE DETECTED - Skipping ALL agent features!")
+            print(f"   MIME type: {request.image_mime_type}")
+            print(f"   Base64 length: {len(request.image_base64)}")
+            print(f"   Jumping directly to Vision AI processing...")
+            # Skip everything, go to vision processing at ~line 900
+            
+        elif GOOGLE_CLOUD_AGENT_AVAILABLE and google_cloud_agent:
             # Check for Google Cloud intents
             gc_result = google_cloud_agent.handle_google_cloud_request(
                 message=request.message,
@@ -708,7 +860,8 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                 )
         
         # AGENT FEATURES - Check intents (schedule, grades, email)
-        if AGENT_FEATURES_AVAILABLE and agent_features:
+        # ONLY run if we haven't returned yet (no Google Cloud intent) AND no image
+        if not has_image_input and AGENT_FEATURES_AVAILABLE and agent_features:
             # ===== CHECK EMAIL INTENT FIRST (cao nhất) =====
             # Email patterns rất cụ thể nên ưu tiên trước
             # Email draft generation KHÔNG cần token
@@ -804,8 +957,10 @@ async def chat(request: ChatRequest, authorization: Optional[str] = Header(None)
                     rag_enabled=False
                 )
         
-        # Detect tool action (YouTube, Google, Wikipedia)
-        tool_action = detect_tool_intent(request.message)
+        # Detect tool action (YouTube, Google, Wikipedia) - ONLY if NO image
+        tool_action = None
+        if not has_image_input:
+            tool_action = detect_tool_intent(request.message)
         
         if tool_action:
             # AI xác nhận action
@@ -884,6 +1039,82 @@ Hãy trả lời dựa trên kiến thức của bạn."""
 **Câu hỏi của học sinh:**
 {request.message}"""
         
+        # Check if image is provided for vision analysis
+        content_parts = []
+        has_image = request.image_base64 and request.image_mime_type
+        
+        if has_image:
+            # Use Gemini Vision API for image analysis
+            print(f"🖼️ Image detected - using Gemini Vision API")
+            print(f"   MIME type: {request.image_mime_type}")
+            print(f"   Base64 length: {len(request.image_base64)}")
+            
+            import base64
+            from PIL import Image
+            import io
+            
+            # Decode base64 image
+            image_data = base64.b64decode(request.image_base64)
+            print(f"   Decoded image size: {len(image_data)} bytes")
+            
+            # Convert bytes to PIL Image
+            image = Image.open(io.BytesIO(image_data))
+            print(f"   Image format: {image.format}, Size: {image.size}")
+            
+            # Validate image
+            if image is None or image.size[0] == 0 or image.size[1] == 0:
+                raise ValueError("Invalid image: size is zero")
+            
+            # Create VISION-SPECIFIC prompt
+            vision_prompt = f"""BẠN LÀ GEMINI - AI VISION MODEL VỚI KHẢ NĂNG NHÌN THẤY HÌNH ẢNH!
+
+🖼️ **THỰC TRẠNG:** 
+- Học sinh ĐÃ GỬI CHO BẠN MỘT HÌNH ẢNH
+- Hình ảnh đang ở ngay phía sau tin nhắn này
+- BẠN CÓ ĐẦY ĐỦ KHẢ NĂNG NHÌN THẤY VÀ PHÂN TÍCH ẢNH
+
+**TUYỆT ĐỐI KHÔNG ĐƯỢC:**
+❌ Nói rằng bạn không thể xem ảnh
+❌ Nói rằng bạn chỉ xử lý văn bản
+❌ Yêu cầu học sinh mô tả lại ảnh
+❌ Bỏ qua nội dung trong ảnh
+
+**NHIỆM VỤ BẮT BUỘC:**
+1. 👀 NHÌN VÀO ẢNH - Bạn CÓ THỂ và PHẢI LÀM điều này
+2. 📝 MÔ TẢ chi tiết những gì bạn thấy
+3. 📖 ĐỌC mọi text, số liệu, công thức trong ảnh
+4. 💡 TRẢ LỜI câu hỏi dựa trên nội dung ảnh
+
+**YÊU CẦU/CÂU HỎI CỦA HỌC SINH:**
+{request.message if request.message.strip() else "Phân tích và mô tả chi tiết những gì bạn thấy trong ảnh này"}
+
+**BẮT ĐẦU NGAY:** Hãy mô tả những gì bạn NHÌN THẤY trong ảnh!"""
+            
+            # Create content parts: text first, then image
+            content_parts = [vision_prompt, image]
+            
+            # Check if using Groq - use Groq Vision model (llama-4-scout)
+            if request.ai_provider == "groq":
+                print("🖼️ Groq với ảnh - sử dụng Llama 4 Scout Vision model...")
+                
+                # Use Groq Vision directly - no need for OCR
+                vision_prompt = f"""Bạn là AI Learning Assistant thông minh với khả năng nhìn và phân tích hình ảnh.
+
+**NHIỆM VỤ:**
+1. 👀 Nhìn vào ảnh và mô tả chi tiết những gì bạn thấy
+2. 📖 Đọc tất cả text, số liệu, công thức trong ảnh (nếu có)
+3. 💡 Trả lời câu hỏi của người dùng dựa trên nội dung ảnh
+
+**Câu hỏi của người dùng:**
+{request.message if request.message.strip() else "Hãy phân tích và mô tả chi tiết nội dung trong ảnh này"}
+
+**Hãy trả lời bằng tiếng Việt, thân thiện và chi tiết.**"""
+                
+                content_parts = [vision_prompt]  # Will be handled specially for Groq
+                print(f"✅ Groq Vision prompt ready")
+        else:
+            content_parts = [prompt]
+        
         # Generate response based on AI provider
         ai_response = ""
         actual_model = request.model
@@ -893,20 +1124,40 @@ Hãy trả lời dựa trên kiến thức của bạn."""
         if request.ai_provider == "groq" and groq_client:
             # Use Groq AI with user-selected model
             try:
-                # Accept any model name that looks like a Groq model or use from model parameter
-                groq_model = request.model if request.model else "llama-3.3-70b-versatile"
-                # Validate it's a Groq model
-                if not any(name in groq_model.lower() for name in ['llama', 'mixtral', 'gemma', 'qwen', 'meta-llama']):
-                    groq_model = "llama-3.3-70b-versatile"
+                # Check if we have an image - use Vision model
+                if has_image:
+                    print(f"🖼️ Using Groq Vision model for image analysis")
                     
-                print(f"🚀 Using Groq model: {groq_model}")
-                ai_response = groq_client.generate_text(
-                    prompt=request.message,
-                    system_prompt=system_prompt,
-                    model=groq_model
-                )
-                actual_model = f"{groq_model} (Groq)"
-                print(f"✅ Groq response received: {len(ai_response)} chars")
+                    vision_prompt = request.message if request.message.strip() else "Hãy phân tích và mô tả chi tiết nội dung trong ảnh này"
+                    
+                    ai_response = groq_client.generate_with_vision(
+                        prompt=vision_prompt,
+                        image_base64=request.image_base64,
+                        image_mime_type=request.image_mime_type,
+                        system_prompt=system_prompt,
+                        model="meta-llama/llama-4-scout-17b-16e-instruct"  # Vision model
+                    )
+                    actual_model = "llama-4-scout-17b (Groq Vision)"
+                    print(f"✅ Groq Vision response received: {len(ai_response)} chars")
+                else:
+                    # Normal text generation
+                    groq_model = request.model if request.model else "llama-3.3-70b-versatile"
+                    # Validate it's a Groq model
+                    if not any(name in groq_model.lower() for name in ['llama', 'mixtral', 'gemma', 'qwen', 'meta-llama', 'scout', 'maverick']):
+                        groq_model = "llama-3.3-70b-versatile"
+                        
+                    print(f"🚀 Using Groq model: {groq_model}")
+                    
+                    # Use content_parts[0] which may contain context
+                    groq_final_prompt = content_parts[0] if isinstance(content_parts[0], str) else request.message
+                    
+                    ai_response = groq_client.generate_text(
+                        prompt=groq_final_prompt,
+                        system_prompt=system_prompt,
+                        model=groq_model
+                    )
+                    actual_model = f"{groq_model} (Groq)"
+                    print(f"✅ Groq response received: {len(ai_response)} chars")
             except Exception as e:
                 print(f"⚠️ Groq error: {e}, falling back to Gemini")
                 import traceback
@@ -926,11 +1177,51 @@ Hãy trả lời dựa trên kiến thức của bạn."""
             actual_model = f"{gemini_model_name} (Groq unavailable)"
         else:
             # Use Gemini (default) - ensure we use Gemini model names
-            gemini_model_name = request.model if 'gemini' in request.model else "gemini-2.0-flash-exp"
+            # Use vision-capable model if image is present
+            if has_image:
+                # Use Gemini Flash Latest - proven vision support
+                gemini_model_name = "gemini-flash-latest"  # Stable vision model
+                print(f"🖼️ Using vision-capable model: {gemini_model_name}")
+                print(f"   Content parts: {len(content_parts)} items (text + image)")
+                print(f"   Vision prompt length: {len(content_parts[0])} chars")
+            else:
+                gemini_model_name = request.model if 'gemini' in request.model else "gemini-2.0-flash-exp"
+            
             model = genai.GenerativeModel(gemini_model_name)
-            response = model.generate_content(prompt)
-            ai_response = response.text
-            actual_model = gemini_model_name
+            
+            try:
+                print(f"📤 Sending to Gemini...")
+                response = model.generate_content(content_parts)
+                ai_response = response.text
+                actual_model = gemini_model_name
+                print(f"✅ Gemini response received: {len(ai_response)} chars")
+                
+                # Debug: Check if response mentions inability to see
+                if has_image and any(word in ai_response.lower() for word in ['không thể xem', 'không xem được', 'chỉ xử lý văn bản', 'không nhìn thấy']):
+                    print(f"⚠️ WARNING: AI claims it cannot see image! This should not happen!")
+                    print(f"   Model used: {gemini_model_name}")
+                    print(f"   Content parts: {len(content_parts)}")
+                    
+            except Exception as e:
+                error_message = str(e)
+                print(f"❌ Gemini API Error: {error_message}")
+                
+                # Check for quota exceeded
+                if "quota" in error_message.lower() or "429" in error_message:
+                    ai_response = """⚠️ **Gemini API Quota Exceeded**
+
+Xin lỗi! API key của Gemini đã vượt quá giới hạn sử dụng miễn phí.
+
+**Giải pháp:**
+1. 🔑 Đợi 1 phút và thử lại (rate limit reset)
+2. 🆕 Tạo API key mới tại: https://ai.google.dev/
+3. 💳 Upgrade lên Gemini API trả phí để có quota cao hơn
+
+**Thông tin lỗi:** Đã vượt quota requests hoặc tokens cho model."""
+                else:
+                    ai_response = f"⚠️ Lỗi khi xử lý: {error_message[:200]}"
+                    
+                actual_model = f"{gemini_model_name} (error)"
         
         # Tạo suggested actions (YouTube, Google Search)
         suggested_actions = []
@@ -1321,15 +1612,15 @@ async def list_groq_models():
             {
                 "id": "llama-3.1-70b-versatile",
                 "name": "Llama 3.1 70B",
-                "description": "Best overall performance",
-                "context": 32768,
+                "description": "High performance",
+                "context": 128000,
                 "speed": "fast"
             },
             {
                 "id": "llama-3.1-8b-instant",
                 "name": "Llama 3.1 8B Instant",
                 "description": "Fastest inference",
-                "context": 32768,
+                "context": 128000,
                 "speed": "ultra-fast"
             },
             {
@@ -1345,6 +1636,13 @@ async def list_groq_models():
                 "description": "Lightweight & efficient",
                 "context": 8192,
                 "speed": "ultra-fast"
+            },
+            {
+                "id": "qwen/qwen3-32b",
+                "name": "Qwen 3 32B",
+                "description": "Advanced reasoning",
+                "context": 131072,
+                "speed": "fast"
             }
         ]
         
@@ -1996,14 +2294,6 @@ async def get_document_capabilities():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        reload=False,  # Disable auto-reload to prevent watchfiles issues
-        log_level="info"
-    )
-    import uvicorn
     port = int(os.getenv("PORT", 8000))
     print("=" * 60)
     print("🚀 Starting AI Chat Service with RAG")
@@ -2014,4 +2304,12 @@ if __name__ == "__main__":
     if CREDENTIAL_API_AVAILABLE:
         print(f"🔐 Credential Manager: Enabled")
     print("=" * 60)
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        reload=False,
+        log_level="info"
+    )
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

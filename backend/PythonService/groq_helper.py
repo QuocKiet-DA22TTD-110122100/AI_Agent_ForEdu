@@ -23,15 +23,15 @@ class GroqClient:
         {
             "id": "llama-3.1-70b-versatile",
             "name": "Llama 3.1 70B",
-            "description": "Best overall performance",
-            "context": 32768,
+            "description": "High performance",
+            "context": 128000,
             "speed": "fast"
         },
         {
             "id": "llama-3.1-8b-instant",
             "name": "Llama 3.1 8B Instant",
             "description": "Fastest inference",
-            "context": 32768,
+            "context": 128000,
             "speed": "ultra-fast"
         },
         {
@@ -47,6 +47,13 @@ class GroqClient:
             "description": "Lightweight & efficient",
             "context": 8192,
             "speed": "ultra-fast"
+        },
+        {
+            "id": "qwen/qwen3-32b",
+            "name": "Qwen 3 32B",
+            "description": "Advanced reasoning",
+            "context": 131072,
+            "speed": "fast"
         }
     ]
     
@@ -81,12 +88,11 @@ class GroqClient:
                 model_id_lower = model_id.lower()
                 
                 # Skip non-chat models
-                if any(skip in model_id_lower for skip in ['whisper', 'audio', 'guard', 'tts', 'vision']):
+                if any(skip in model_id_lower for skip in ['whisper', 'audio', 'guard', 'tts', 'vision', 'prompt-guard']):
                     continue
                 
-                # Only include known chat models
-                if not any(name in model_id_lower for name in ['llama', 'mixtral', 'gemma', 'qwen']):
-                    continue
+                # Relaxed: Include most models except those explicitly skipped above
+                # We no longer strictly filter by 'llama', 'mixtral', etc.
                 
                 # Skip models with very small context (likely not chat models)
                 context = model.get('context_window', 8192)
@@ -224,6 +230,71 @@ class GroqClient:
         response = self.chat_completion(messages, model=model)
         
         return response['choices'][0]['message']['content']
+    
+    def generate_with_vision(
+        self,
+        prompt: str,
+        image_base64: str,
+        image_mime_type: str = "image/jpeg",
+        system_prompt: Optional[str] = None,
+        model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    ) -> str:
+        """
+        Generate text with image analysis using Groq Vision model
+        
+        Args:
+            prompt: User prompt/question about the image
+            image_base64: Base64 encoded image data
+            image_mime_type: MIME type of image (image/jpeg, image/png, etc.)
+            system_prompt: Optional system instruction
+            model: Vision-capable model (default: llama-4-scout)
+            
+        Returns:
+            Generated text string with image analysis
+        """
+        url = f"{self.base_url}/chat/completions"
+        
+        messages = []
+        
+        if system_prompt:
+            messages.append({
+                "role": "system",
+                "content": system_prompt
+            })
+        
+        # Build content with text and image
+        user_content = [
+            {
+                "type": "text",
+                "text": prompt
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{image_mime_type};base64,{image_base64}"
+                }
+            }
+        ]
+        
+        messages.append({
+            "role": "user",
+            "content": user_content
+        })
+        
+        payload = {
+            "messages": messages,
+            "model": model,
+            "temperature": 0.7,
+            "max_tokens": 4096
+        }
+        
+        print(f"🖼️ Groq Vision request - model: {model}")
+        
+        response = requests.post(url, json=payload, headers=self.headers, timeout=60)
+        response.raise_for_status()
+        
+        result = response.json()
+        return result['choices'][0]['message']['content']
 
 
 # Example usage

@@ -1,0 +1,12 @@
+# Install image analysis libraries for Groq vision support
+# Run: pip install -r requirements-vision.txt
+
+# OCR for text extraction
+easyocr>=1.7.0
+
+# Image captioning
+transformers>=4.30.0
+torch>=2.0.0
+
+# Image processing
+Pillow>=10.0.0

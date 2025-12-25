@@ -1,4 +1,4 @@
 # Start AI Service
 Write-Host "Starting AI Service..." -ForegroundColor Green
-Set-Location "d:\DACN\backend\PythonService"
+Set-Location $PSScriptRoot
 python.exe .\main.py
