@@ -10,7 +10,7 @@ pip install google-cloud-vision google-cloud-translate google-cloud-speech googl
 
 echo.
 echo ============================================================
-echo Step 2: Configuration
+echo Step 2: Configuration..
 echo ============================================================
 echo.
 echo Please add your Google Cloud credentials to .env file:
@@ -33,6 +33,7 @@ echo   - Cloud Translation API
 echo   - Cloud Speech-to-Text API
 echo   - Cloud Text-to-Speech API
 echo   - Cloud Natural Language API
+echo      - Cloud Natural Language API
 echo.
 echo ============================================================
 echo Setup Complete!
