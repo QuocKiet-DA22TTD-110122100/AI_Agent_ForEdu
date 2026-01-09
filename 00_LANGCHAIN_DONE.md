@@ -57,9 +57,7 @@ curl -X POST http://localhost:8000/api/chat/langchain \
   -H "Content-Type: application/json" \
   -d '{"message": "Xin chào!", "user_id": 1}'
 ```
-
 ---
-
 ## 🎯 **Tính Năng Mới**
 
 ### **✨ Intelligent Agent**
