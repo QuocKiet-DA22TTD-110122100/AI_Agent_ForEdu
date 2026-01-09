@@ -200,31 +200,6 @@ Authorization: Bearer {token}
 
 ## 📈 Next Steps (Tương lai)
 
-### Phase 2 (Optional)
-- [ ] Thêm biểu đồ progress theo thời gian
-- [ ] Gamification: Badges, achievements
-- [ ] Leaderboard: Xếp hạng sinh viên
-- [ ] Certificates: Chứng chỉ hoàn thành khóa học
-- [ ] Email notifications: Nhắc nhở khi chưa học
-- [ ] Mobile responsive improvements
-- [ ] Export progress to PDF
-
-### Phase 3 (Advanced)
-- [ ] AI-powered learning recommendations
-- [ ] Personalized learning path
-- [ ] Discussion forums per lesson
-- [ ] Peer review system
-- [ ] Video progress tracking
-- [ ] Quiz integration with progress
-
-## 🎓 Summary
-
-Hệ thống theo dõi tiến độ học tập đã được **hoàn thiện 100%** với các tính năng:
-
-✅ **Backend APIs** - Đầy đủ endpoints cho CRUD progress
-✅ **Frontend Integration** - Tích hợp API vào CourseDetailPage và LessonPage  
-✅ **Real-time Updates** - Tự động cập nhật tiến độ khi mark complete
-✅ **Beautiful UI** - Hiển thị trạng thái với màu sắc và icons rõ ràng
 ✅ **Time Tracking** - Theo dõi thời gian học tự động
 ✅ **Auto-calculation** - Tính toán % khóa học tự động
 ✅ **Student Experience** - UX mượt mà, dễ sử dụng
