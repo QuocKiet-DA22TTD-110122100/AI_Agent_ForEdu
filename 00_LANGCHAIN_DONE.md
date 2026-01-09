@@ -13,7 +13,13 @@ Dự án **Agent For Edu** đã được nâng cấp lên **Full AI Agent** vớ
 - ✅ Testing: 5 phút
 
 ---
+## 📂 **Files Đã Tạo (8 files)**
 
+### **Backend (4 files):**
+1. ✅ `backend/PythonService/langchain_agent.py` (400 lines)
+2. ✅ `backend/PythonService/test_langchain_agent.py` (200 lines)
+3. ✅ `backend/PythonService/install-langchain.cmd`
+4. ✅ `backend/PythonService/requirements.txt` (updated)
 
 ### **Documentation (4 files):**
 5. ✅ `LANGCHAIN_INTEGRATION_GUIDE.md` (Full guide)
